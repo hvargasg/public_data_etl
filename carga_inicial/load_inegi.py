@@ -260,7 +260,9 @@ def main() -> int:
         ambito = (
             ageb_amb
             if ageb_amb is not None
-            else pd.Series([None] * len(ageb_raw), index=ageb_raw.index)
+            else pd.Series(
+                [None] * len(ageb_raw), index=ageb_raw.index, dtype="object"
+            )
         )
 
         cvegeo = ageb_ent + ageb_mun
@@ -286,13 +288,19 @@ def main() -> int:
         ageb = base_frame(
             ageb_raw,
             {
-                "cve_ageb": pd.Series(cve_ageb_list, index=ageb_raw.index),
-                "cve_loc": pd.Series(cve_loc_list, index=ageb_raw.index),
+                "cve_ageb": pd.Series(cve_ageb_list, index=ageb_raw.index, dtype="object"),
+                "cve_loc": pd.Series(cve_loc_list, index=ageb_raw.index, dtype="object"),
                 "cvegeo": cvegeo,
                 "cve_ageb_inegi": ageb_ageb,
-                "tipo": pd.Series(tipo_list, index=ageb_raw.index),
+                "tipo": pd.Series(tipo_list, index=ageb_raw.index, dtype="object"),
             },
         )
+        # pandas 3 convierte None a NaN al inferir tipos; las AGEB rurales
+        # deben conservar cve_loc como NULL para respetar la llave foránea.
+        for columna in ("cve_loc", "tipo"):
+            ageb[columna] = (
+                ageb[columna].astype(object).where(ageb[columna].notna(), None)
+            )
         ageb = ageb[
             ageb["cve_ageb"].str.len().isin([9, 13]) & keep(ageb["cve_ageb"])
         ].drop_duplicates("cve_ageb")
