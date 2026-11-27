@@ -89,7 +89,10 @@ public_data_etl/
 │   ├── run_query.py
 │   ├── load_clima_smn.py
 │   ├── load_clima_sih.py
+│   ├── load_claves_geo.py
 │   ├── build_mensual.py
+│   ├── sql/
+│   │   └── 10_claves_geo_dbo.sql
 │   └── queries/
 │       ├── README.md
 │       ├── 01_vigente.sql
@@ -102,6 +105,7 @@ public_data_etl/
 │   ├── etl_common.py
 │   ├── datos_publicos_diario_dag.py
 │   ├── datos_publicos_mensual_dag.py
+│   ├── datos_publicos_claves_geo_dag.py
 │   └── datos_publicos_historico_dag.py
 ├── scripts/
 │   ├── etl-infisical.sh
@@ -340,6 +344,47 @@ python -m actualizacion.run_query --archivo actualizacion/queries/04_calidad_dat
 
 Ver `actualizacion/queries/README.md` para el catálogo completo.
 
+Para DML/DDL (por ejemplo, cerrar un `carga_log` colgado), agrega `--ejecutar`:
+hace `commit` y no intenta imprimir filas.
+
+```bash
+python -m actualizacion.run_query --archivo ruta/al/script.sql --ejecutar
+```
+
+### 6.4 Claves geográficas de negocio
+
+Rellena `cvegeo` (municipio) y `cve_ent` (estado) en `dbo.Clientes` y
+`dbo.CEDIS` a partir de sus coordenadas, usando el Marco Geoestadístico de
+`DataLake.datos_publicos`.
+
+```bash
+python -m actualizacion.load_claves_geo                 # ambas tablas
+python -m actualizacion.load_claves_geo --tabla clientes
+python -m actualizacion.load_claves_geo --tabla cedis
+python -m actualizacion.load_claves_geo --tabla clientes --limite 2000   # prueba
+python -m actualizacion.load_claves_geo --batch 5000    # filas por lote (default)
+```
+
+Reglas:
+
+* **Solo rellena lo que está en `NULL`**; nunca sobrescribe una clave ya
+  asignada. Por eso la corrida diaria solo procesa los registros nuevos.
+* `cve_ent` se deriva de `LEFT(cvegeo, 2)` cuando hubo municipio.
+* Si el punto cae en México pero fuera de todo municipio, se usa el polígono de
+  `entidad` para obtener al menos `cve_ent`.
+* Si la coordenada es inválida (fuera del bounding box de México o `0,0`), se
+  usa el texto `Estado` y, si hace falta, `Ciudad` (solo para `cve_ent`).
+* El cálculo geométrico se hace **en SQL Server** con los índices espaciales de
+  `municipio` y `entidad`; Python solo orquesta por lotes (default 5,000 filas)
+  para no abrir transacciones largas ni bloquear `dbo`.
+
+Las columnas se crean de forma idempotente con
+`actualizacion/sql/10_claves_geo_dbo.sql`. `dbo.Clientes` se actualiza por
+`(Cliente_id, Direccion_id)` y `dbo.CEDIS` por su PK `CEDIS`.
+
+En el servidor se ejecuta con `make claves-geo` (acepta `ARGS="..."`) y el DAG
+diario de las 02:00 (ver [sección 14](#14-orquestación-con-airflow)).
+
 ---
 
 ## 7. Tablas principales
@@ -362,6 +407,10 @@ Ver `actualizacion/queries/README.md` para el catálogo completo.
 | `demografia_ageb` | AGEB-año-indicador | demografía/social fina |
 
 Todas las tablas viven en **`DataLake.datos_publicos`**.
+
+Las tablas de negocio `dbo.Clientes` y `dbo.CEDIS` se enriquecen con `cvegeo`
+(municipio) y `cve_ent` (estado) usando esta geografía; ver
+[sección 6.4](#64-claves-geográficas-de-negocio).
 
 Detalle completo del modelo estrella (dimensiones, hechos, puente y por qué no
 hay redundancia) en [`docs/modelo.md`](docs/modelo.md).
@@ -490,6 +539,7 @@ make diario ARGS="--dias 7"
 make mensual ARGS="--solo-calculo --desde 2026-11 --hasta 2026-11"
 make inicial ARGS="--init"
 make backfill ARGS="--tipo diario"
+make claves-geo ARGS="--tabla ambas"
 make query QUERY=04_calidad_datos.sql
 
 # Servidor: machine.env es root:640, por eso sudo
@@ -575,6 +625,7 @@ sudo make check-infisical
 | `make mensual ARGS="..."` | Ejecuta `actualizacion.run_mensual`. |
 | `make inicial ARGS="..."` | Ejecuta `carga_inicial.run_inicial`. |
 | `make backfill ARGS="..."` | Ejecuta `carga_inicial.backfill_clima`. |
+| `make claves-geo ARGS="..."` | Rellena `cvegeo`/`cve_ent` en `dbo.Clientes` y `dbo.CEDIS`. |
 | `make query QUERY=...` | Ejecuta una query de `actualizacion/queries/`. |
 | `make etl MODULO=... ARGS="..."` | Ejecuta cualquier módulo del repo. |
 | `make etl-infisical ...` | Fuerza el modo Infisical. |
@@ -647,12 +698,16 @@ horario y sus tareas.
 |---|---|---|---|
 | `datos_publicos_diario` | Automático | 06:00 | Carga los TXT diarios del SMN de los últimos 7 días y recalcula la serie mensual propia. |
 | `datos_publicos_mensual` | Automático | Día 3 a las 07:00 | Carga el TXT oficial del SMN y recalcula la serie propia del rango de años. |
+| `datos_publicos_claves_geo` | Automático | 02:00 | Rellena `cvegeo`/`cve_ent` en `dbo.Clientes` y `dbo.CEDIS` solo para filas nuevas. |
 | `datos_publicos_historico_manual` | Manual | — | Carga histórica de clima 2023+ (`carga_inicial.backfill_clima`). |
 
-Cada DAG termina con una tarea `etl_completo` (`EmptyOperator`) que emite un
-Asset (`datos_publicos_diario_completo`, `datos_publicos_mensual_completo` o
-`datos_publicos_backfill_completo`) solo si la carga tuvo éxito. Otros DAGs o
-consumidores pueden usar esos Assets en su `schedule`.
+Los DAGs de clima terminan con una tarea `etl_completo` (`EmptyOperator`) que
+emite un Asset (`datos_publicos_diario_completo`,
+`datos_publicos_mensual_completo` o `datos_publicos_backfill_completo`) solo si
+la carga tuvo éxito. Otros DAGs o consumidores pueden usar esos Assets en su
+`schedule`. `datos_publicos_claves_geo` no emite Asset: es un proceso
+idempotente e independiente que solo depende de que existan las tablas de
+negocio y la geografía INEGI cargada.
 
 Las tareas usan `DockerOperator`; cada corrida arranca un contenedor
 independiente de `public-data-etl:latest`, por lo que las dependencias del ETL
@@ -749,7 +804,8 @@ Infisical):
      airflow dags list-import-errors
    ```
 
-4. Despausa `datos_publicos_diario` y `datos_publicos_mensual`, y ejecuta una
+4. Despausa `datos_publicos_diario`, `datos_publicos_mensual` y
+   `datos_publicos_claves_geo`, y ejecuta una
    tarea de prueba desde la UI. Si falta un secreto, el log de la tarea indica
    exactamente cuál, sin imprimir valores.
 
@@ -763,4 +819,28 @@ Infisical):
 > geografía, cargar sitios o demografía) usa `make inicial`, `make etl` o los
 > atajos de `scripts/etl-helpers.sh`; todos resuelven los secretos igual que los
 > DAGs.
+
+### 14.5 Montaje de los DAGs en Airflow
+
+Airflow solo descubre los DAGs que están dentro de su carpeta
+`/opt/airflow/dags`. El `dags/` de este repo no se copia a la imagen del ETL: se
+monta como una **subcarpeta** del directorio de DAGs, igual que los demás
+proyectos del servidor. En `/opt/services/airflow/docker-compose.yaml` agrega,
+en el bloque `x-airflow-common` y en el servicio `airflow-scheduler`:
+
+```yaml
+- ${DATOS_PUBLICOS_DAGS_DIR:-/opt/services/public_data_etl/dags}:/opt/airflow/dags/datos_publicos:ro
+```
+
+Después recrea los servicios para que tomen el montaje y confirma el registro:
+
+```bash
+cd /opt/services/airflow
+sudo ./scripts/compose.sh up -d
+sudo docker exec airflow-airflow-scheduler-1 airflow dags list | grep datos_publicos
+```
+
+`dags/.airflowignore` excluye `etl_common.py`, para que Airflow no intente
+parsearlo como un DAG. Los DAGs se importan desde el subdirectorio
+`datos_publicos/` y comparten el helper `etl_common.py` que está junto a ellos.
 

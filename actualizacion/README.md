@@ -6,6 +6,7 @@ Este bloque contiene **todo lo recurrente**:
 - Carga de la serie mensual oficial del SMN.
 - Construcción de la serie mensual propia (`CALCULADO`).
 - Clima mensual derivado para los sitios.
+- Claves geográficas (`cvegeo`, `cve_ent`) para las tablas de negocio `dbo`.
 - Queries de consulta y control.
 
 No crea estructuras ni carga geografía. Eso está en `carga_inicial/`.
@@ -31,7 +32,10 @@ actualizacion/
 ├── run_query.py
 ├── load_clima_smn.py
 ├── load_clima_sih.py
+├── load_claves_geo.py
 ├── build_mensual.py
+├── sql/
+│   └── 10_claves_geo_dbo.sql
 └── queries/
     ├── README.md
     ├── 01_vigente.sql
@@ -132,7 +136,44 @@ python -m actualizacion.run_mensual --solo-oficial
 
 ---
 
-## 4. Regla calculado vs oficial
+## 4. Claves geográficas de negocio
+
+```bash
+python -m actualizacion.load_claves_geo
+```
+
+Rellena `cvegeo` (municipio) y `cve_ent` (estado) en `dbo.Clientes` y
+`dbo.CEDIS` a partir de sus coordenadas. Usa los polígonos de
+`datos_publicos.municipio` y `.entidad`; **no** crea ni recarga geografía.
+
+Reglas:
+
+1. Solo actualiza filas con `cvegeo`/`cve_ent` en `NULL`; nunca sobrescribe.
+2. `cve_ent = LEFT(cvegeo, 2)` cuando se resolvió el municipio.
+3. Si el punto es válido pero no cae en ningún municipio, usa el polígono de
+   entidad para obtener `cve_ent`.
+4. Si la coordenada es inválida, usa el texto `Estado` y, si hace falta,
+   `Ciudad` (solo `cve_ent`).
+
+El cálculo geométrico corre en SQL Server con los índices espaciales; Python
+solo orquesta por lotes para evitar transacciones largas.
+
+Opciones:
+
+```bash
+python -m actualizacion.load_claves_geo --tabla clientes
+python -m actualizacion.load_claves_geo --tabla cedis
+python -m actualizacion.load_claves_geo --limite 2000   # prueba
+python -m actualizacion.load_claves_geo --batch 5000    # filas por lote
+```
+
+La DDL idempotente de las columnas está en
+`actualizacion/sql/10_claves_geo_dbo.sql`. En el servidor se ejecuta con
+`make claves-geo` y con el DAG `datos_publicos_claves_geo` (02:00).
+
+---
+
+## 5. Regla calculado vs oficial
 
 - `clima_mensual` guarda filas `CALCULADO / PRELIMINAR` y
   `OFICIAL / DEFINITIVO`.
@@ -145,7 +186,7 @@ Detalle en `../docs/agregaciones.md`.
 
 ---
 
-## 5. Queries de operación
+## 6. Queries de operación
 
 ```bash
 python -m actualizacion.run_query --archivo actualizacion/queries/01_vigente.sql
@@ -166,7 +207,7 @@ También puedes abrirlas en SSMS/Azure Data Studio y editar las variables
 
 ---
 
-## 6. SIH bloqueado
+## 7. SIH bloqueado
 
 Si el SIH devuelve HTML o redirecciones 307, descarga los CSV manualmente y
 carga desde una carpeta local:
@@ -180,7 +221,7 @@ parsearlas.
 
 ---
 
-## 7. Bitácora
+## 8. Bitácora
 
 Cada paso escribe en `datos_publicos.carga_log`.
 
