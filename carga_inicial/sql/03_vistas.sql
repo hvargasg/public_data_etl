@@ -80,6 +80,30 @@ FROM {{schema}}.vw_sitio_clima_mensual
 WHERE ranking = 1;
 GO
 
+/* Serie estatal vigente: prioriza la red reducida (SMN_RED_CSV) sobre el PDF. */
+CREATE OR ALTER VIEW {{schema}}.vw_clima_estatal_vigente
+AS
+WITH ranked AS (
+    SELECT h.cve_ent, h.variable_id, h.anio, h.mes, h.valor,
+           h.fuente_id, f.codigo AS fuente, h.fecha_carga,
+           ROW_NUMBER() OVER (
+               PARTITION BY h.cve_ent, h.variable_id, h.anio, h.mes
+               ORDER BY CASE f.codigo
+                            WHEN 'SMN_RED_CSV' THEN 0
+                            WHEN 'PDF_ESTATAL' THEN 1
+                            ELSE 9
+                        END,
+                        h.fecha_carga DESC
+           ) AS rn
+    FROM {{schema}}.clima_estatal_mensual h
+    JOIN {{schema}}.fuente f ON f.fuente_id = h.fuente_id
+)
+SELECT cve_ent, variable_id, anio, mes, valor,
+       fuente_id, fuente, fecha_carga
+FROM ranked
+WHERE rn = 1;
+GO
+
 /* Compatibilidad con la tabla histórica dbo.clima_hist (formato ancho). */
 CREATE OR ALTER VIEW {{schema}}.vw_clima_hist_compat
 AS
@@ -93,9 +117,8 @@ SELECT DATEFROMPARTS(h.anio, h.mes, 1) AS FECHA,
        MAX(CASE WHEN v.codigo = 'TMIN' THEN h.valor END) AS Tmin,
        ROUND(MAX(CASE WHEN v.codigo = 'TMAX' THEN h.valor END)
              - MAX(CASE WHEN v.codigo = 'TMIN' THEN h.valor END), 2) AS Tdiff
-FROM {{schema}}.clima_estatal_mensual h
+FROM {{schema}}.vw_clima_estatal_vigente h
 JOIN {{schema}}.entidad en   ON en.cve_ent = h.cve_ent
 JOIN {{schema}}.variable v   ON v.variable_id = h.variable_id
-WHERE h.fuente_id = (SELECT fuente_id FROM {{schema}}.fuente WHERE codigo = 'PDF_ESTATAL')
 GROUP BY h.anio, h.mes, en.nom_ent;
 GO

@@ -1,8 +1,11 @@
-"""DAG mensual: resúmenes estatales mensuales del SMN (PDFs).
+"""DAG mensual: resúmenes estatales mensuales del SMN (PDFs) — LEGACY.
+
+Este archivo vive en `legacy_dags/`, que **no se monta en Airflow**. Se
+conserva como referencia y para ejecuciones manuales excepcionales; la fuente
+operativa es `datos_publicos_estatal_csv` (red reducida en CSV).
 
 Ejecuta `python -m actualizacion.load_estatal_pdf` dentro de la imagen
-`public-data-etl:latest`. Es el reemplazo del flujo legacy
-`auto_conagua_download.py`:
+`public-data-etl:latest`:
 
 1. Descarga los PDFs anuales de TMAX, TMED, TMIN y PREC.
 2. Extrae la tabla estado-mes con `pdfplumber` (sin CSV intermedios).
@@ -18,8 +21,10 @@ mensualmente). Para una carga histórica completa:
 No modifica `dbo.clima_hist`. La vista `vw_clima_hist_compat` reproduce el
 formato ancho para 2023+.
 
+Para usarlo desde Airflow, copia el archivo a `dags/` y despausa el DAG. No
+lo agregues a `legacy_dags` en el compose: esa carpeta no debe montarse.
+
 Requisitos:
-    - Este DAG debe estar despausado.
     - La imagen `public-data-etl:latest` debe existir en el host.
     - El catálogo `variable` y la tabla `clima_estatal_mensual` deben existir.
 """
@@ -32,7 +37,8 @@ from pathlib import Path
 
 from airflow.sdk import DAG
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # para importar etl_common
+# legacy_dags/ no se monta en Airflow; etl_common vive en ../dags.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "dags"))
 from etl_common import FECHA_INICIO, tarea_etl  # noqa: E402
 
 DAG_ID = "datos_publicos_estatal_pdf"

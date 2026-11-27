@@ -262,12 +262,17 @@ conservan: no se descarta lo oficial por falta de metadato de completitud.
 
 `clima_estatal_mensual` guarda la serie de entidad-mes:
 
-- De los PDFs de CONAGUA (`PDF_ESTATAL`).
-- De la migración de `dbo.clima_hist` (`PDF_ESTATAL`).
-- Opcionalmente, de la red reducida (`SMN_RED_CSV`).
+- De la red reducida (`SMN_RED_CSV`): fuente **operativa**, media simple de
+  estaciones por entidad; cubre 2013+.
+- De los PDFs de CONAGUA (`PDF_ESTATAL`): fuente **legacy/opcional**, tabla
+  estatal oficial exacta.
+- De la migración de `dbo.clima_hist` (`PDF_ESTATAL`, 2023+).
 
-Esta tabla **no** se calcula desde estaciones; es una serie independiente para
-reportes estatales y compatibilidad.
+`vw_clima_estatal_vigente` prioriza `SMN_RED_CSV` y usa `PDF_ESTATAL` solo si
+falta el mes. La lluvia de la red reducida es una estimación y difiere del PDF
+oficial (~5–25%); la temperatura es prácticamente idéntica. Esta tabla **no**
+se calcula desde `clima_mensual`; es una serie independiente para reportes
+estatales y compatibilidad.
 
 ---
 

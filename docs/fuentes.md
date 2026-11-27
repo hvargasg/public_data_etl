@@ -127,27 +127,14 @@ Ejemplo verificado:
   Ejemplo: [medex01001.txt](https://smn.conagua.gob.mx/tools/RESOURCES/Normales_Climatologicas/Med-Extr/ags/medex01001.txt).
 - **Normales 1991-2020**: patrón `.../Normales9120/{edo}/nor9120_{clave}.txt`.
   Ejemplo: [nor9120_01001.txt](https://smn.conagua.gob.mx/tools/RESOURCES/Normales_Climatologicas/Normales9120/ags/nor9120_01001.txt).
-- **Red reducida mensual**:
+- **Red reducida mensual (CSV)**:
   `https://smn.conagua.gob.mx/tools/RESOURCES/com_archivo_datos_resumenes/{AAAAMM}010000{TMax|TMed|TMin|Lluv}.csv`.
   Ejemplo: [202501010000TMax.csv](https://smn.conagua.gob.mx/tools/RESOURCES/com_archivo_datos_resumenes/202501010000TMax.csv).
-  Solo 2013 en adelante y ~1,400 estaciones. Es la base de los PDFs estatales
-  de temperatura.
+  Cubre 2013 en adelante, ~1,400 estaciones y es **estación-mes**.
 - **PDFs estatales**:
   `https://smn.conagua.gob.mx/tools/DATA/Climatolog%C3%ADa/Pron%C3%B3stico%20clim%C3%A1tico/Temperatura%20y%20Lluvia/{TMAX|TMED|TMIN|PREC}/{año}.pdf`.
   Ejemplo: [TMAX/2025.pdf](https://smn.conagua.gob.mx/tools/DATA/Climatolog%C3%ADa/Pron%C3%B3stico%20clim%C3%A1tico/Temperatura%20y%20Lluvia/TMAX/2025.pdf).
-  La fuente cubre 1985+, pero el modelo solo carga desde 2023. La temperatura
-  es reproducible como media simple de la red reducida; la lluvia **no** es
-  reproducible con datos públicos.
-  Los carga `actualizacion/load_estatal_pdf.py` (DAG
-  `datos_publicos_estatal_pdf`, día 6) en `clima_estatal_mensual` como
-  `PDF_ESTATAL`; descarga a un temporal y lo borra al terminar. No modifica
-  `dbo.clima_hist`, que sigue siendo la serie 1985–2022.
-
-> **¿Se pueden reemplazar los PDFs por la red reducida CSV?** No para el mismo
-> producto. La red reducida es estación-mes, empieza en 2013 y no publica
-> lluvia estatal; los PDFs son estado-mes, cubren 1985+ y son la referencia
-> oficial de las cuatro variables. La red reducida sirve para validar
-> temperatura, no para sustituir la carga estatal.
+  Cubre 1985 en adelante y es **estado-mes** con las cuatro variables.
 
 Página oficial para elegir el año:
 <https://smn.conagua.gob.mx/es/climatologia/temperaturas-y-lluvias/resumenes-mensuales-de-temperaturas-y-lluvias>
@@ -155,8 +142,39 @@ Página oficial para elegir el año:
 > La ruta de los PDFs lleva acentos codificados (`Climatolog%C3%ADa` y
 > `Pron%C3%B3stico%20clim%C3%A1tico`). Sin ellos el servidor devuelve error 500.
 
-Los productos que aún no se cargan (extremos, normales y red reducida
-opcional) se pueden agregar como fuentes nuevas sin cambiar el modelo.
+#### Red reducida CSV frente a PDFs estatales
+
+El visor de la página oficial tiene un botón **“Descarga de Datos”** que baja
+la red reducida en CSV; la tabla estado-mes que se muestra en la página
+**solo** existe como PDF (no hay CSV/XLSX/JSON de esa tabla).
+
+| Criterio | Red reducida CSV | PDF estatal |
+|---|---|---|
+| Grano | estación-mes | estado-mes |
+| Cobertura | 2013+ | 1985+ |
+| Variables | TMax, TMed, TMin, Lluv | TMAX, TMED, TMIN, PREC |
+| Formato | CSV (`latin-1`) | PDF (tabla) |
+| `fuente_id` | `SMN_RED_CSV` | `PDF_ESTATAL` |
+| Uso actual | **operativo** | legacy/opcional |
+
+Diferencias medidas (2023–2026, media simple de estaciones por estado):
+
+- **Temperatura:** ±0.3 °C; prácticamente idéntica al PDF.
+- **Lluvia:** ~5–25% de diferencia, porque la red de lluvia es distinta.
+  Ejemplos: México jul-2024 −21%, CDMX jul-2025 +19%, Sonora jul-2025 −20%.
+
+Por eso el ETL usa la red reducida CSV como fuente operativa:
+
+- `actualizacion/load_estatal_csv.py` descarga los CSV, agrega por entidad y
+  carga `clima_estatal_mensual` con `fuente_id = SMN_RED_CSV`.
+- `vw_clima_estatal_vigente` prioriza el CSV y usa `PDF_ESTATAL` solo si falta
+  el mes.
+- `actualizacion/load_estatal_pdf.py` queda como **legacy/opcional** para
+  obtener la tabla estatal oficial exacta; su DAG vive en `legacy_dags/` y no
+  se monta en Airflow.
+
+Los productos que aún no se cargan (extremos, normales y red reducida a nivel
+estación) se pueden agregar como fuentes nuevas sin cambiar el modelo.
 
 ---
 

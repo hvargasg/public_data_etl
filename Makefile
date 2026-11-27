@@ -27,7 +27,7 @@ PYTHON ?= $(if $(VENV_PYTHON),$(VENV_PYTHON),python3)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env check build diario mensual inicial backfill claves-geo clima-clientes estatal-pdf query etl etl-infisical check-infisical shell clean deploy
+.PHONY: help env check build diario mensual inicial backfill claves-geo clima-clientes estatal-csv estatal-pdf query etl etl-infisical check-infisical shell clean deploy
 
 help: ## Muestra esta ayuda
 	@awk 'BEGIN {FS = ":.*## "; printf "Uso: make <objetivo>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -45,7 +45,7 @@ check: ## Compila el código y revisa las CLI (usa la imagen si existe)
 	MODULOS="carga_inicial.run_inicial carga_inicial.backfill_clima \
 		actualizacion.run_diario actualizacion.run_mensual actualizacion.run_query \
 		actualizacion.load_claves_geo actualizacion.build_clima_clientes \
-		actualizacion.load_estatal_pdf"; \
+		actualizacion.load_estatal_csv actualizacion.load_estatal_pdf"; \
 	if $(DOCKER) image inspect $(IMAGE) >/dev/null 2>&1; then \
 		echo "check: usando la imagen $(IMAGE)"; \
 		$(DOCKER) run --rm --entrypoint bash $(IMAGE) -c \
@@ -80,7 +80,10 @@ claves-geo: ## Asigna cvegeo/cve_ent en dbo.Clientes y dbo.CEDIS (ARGS="--tabla 
 clima-clientes: ## Deriva clima mensual de clientes desde estaciones vecinas (ARGS="--todo")
 	@ETL_MODULO=actualizacion.build_clima_clientes ./scripts/etl-infisical.sh $(ARGS)
 
-estatal-pdf: ## Carga los PDFs estatales mensuales del SMN (ARGS="--todo")
+estatal-csv: ## Carga la serie estatal desde la red reducida SMN en CSV (ARGS="--todo")
+	@ETL_MODULO=actualizacion.load_estatal_csv ./scripts/etl-infisical.sh $(ARGS)
+
+estatal-pdf: ## LEGACY: PDFs estatales del SMN (ARGS="--todo"); DAG en legacy_dags/
 	@ETL_MODULO=actualizacion.load_estatal_pdf ./scripts/etl-infisical.sh $(ARGS)
 
 query: ## Ejecuta una query de control (QUERY=04_calidad_datos.sql QUERY_ARGS="--limite 50")

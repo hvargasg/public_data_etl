@@ -4,7 +4,7 @@ Este bloque contiene **todo lo recurrente**:
 
 - Carga de clima diario del SMN y del SIH.
 - Carga de la serie mensual oficial del SMN.
-- Carga de los resúmenes estatales mensuales del SMN (PDFs).
+- Carga de la serie estatal mensual desde la red reducida (CSV).
 - Construcción de la serie mensual propia (`CALCULADO`).
 - Clima mensual derivado para los sitios.
 - Claves geográficas (`cvegeo`, `cve_ent`) para las tablas de negocio `dbo`.
@@ -35,12 +35,14 @@ actualizacion/
 ├── load_clima_smn.py
 ├── load_clima_sih.py
 ├── load_claves_geo.py
+├── load_estatal_csv.py
 ├── load_estatal_pdf.py
 ├── build_clima_clientes.py
 ├── build_mensual.py
 ├── sql/
 │   ├── 10_claves_geo_dbo.sql
-│   └── 11_clima_clientes.sql
+│   ├── 11_clima_clientes.sql
+│   └── 12_estatal_csv.sql
 └── queries/
     ├── README.md
     ├── 01_vigente.sql
@@ -218,41 +220,44 @@ Decisiones y mediciones completas en `../docs/clima_clientes.md`.
 
 ---
 
-## 6. Resúmenes estatales mensuales (PDFs)
+## 6. Serie estatal mensual (CSV de la red reducida)
 
 ```bash
-python -m actualizacion.load_estatal_pdf
+python -m actualizacion.load_estatal_csv
 ```
 
-Reemplaza el flujo legacy `auto_conagua_download.py`. Descarga los PDFs
-anuales de TMAX, TMED, TMIN y PREC del SMN, extrae la tabla estado-mes con
-`pdfplumber`, y reemplaza en `clima_estatal_mensual` los pares
-`(año, variable)` descargados (`fuente_id = PDF_ESTATAL`).
+Es la fuente **operativa** de la serie estatal. Descarga los CSV mensuales de
+TMax, TMed, TMin y Lluv de la red reducida del SMN, agrega por entidad
+federativa (media simple de estaciones) y reemplaza en
+`clima_estatal_mensual` los pares `(año, mes, variable)` descargados
+(`fuente_id = SMN_RED_CSV`).
 
-- **No usa CSV intermedios** ni `dbo.clima_hist`: parsea el PDF en memoria y
-  escribe en el modelo nuevo.
-- Descarga a un directorio temporal y **borra los PDFs al terminar**, incluso
-  si falla. `--conservar` los deja para depurar.
-- Si un PDF falla, conserva los datos anteriores de ese par año-variable.
-- Por defecto procesa el **año actual y el anterior**.
-- Solo carga 2023+ (ventana del modelo). `dbo.clima_hist` sigue siendo la
-  fuente para 1985–2022.
+- **No escribe archivos**: descarga y agrega en memoria.
+- Por defecto procesa los **últimos 3 meses**.
+- Si un CSV falla o no existe (404), conserva lo anterior de ese mes-variable.
+- Solo carga 2023+ (ventana del modelo).
+- `vw_clima_estatal_vigente` prioriza `SMN_RED_CSV` y usa `PDF_ESTATAL` solo
+  si falta el mes.
 
 Opciones:
 
 ```bash
-python -m actualizacion.load_estatal_pdf --todo
-python -m actualizacion.load_estatal_pdf --desde 2024 --hasta 2026
-python -m actualizacion.load_estatal_pdf --variables TMAX,PREC
-python -m actualizacion.load_estatal_pdf --dry-run
+python -m actualizacion.load_estatal_csv --todo
+python -m actualizacion.load_estatal_csv --desde 2025-01 --hasta 2025-12
+python -m actualizacion.load_estatal_csv --variables TMax,Lluv
+python -m actualizacion.load_estatal_csv --dry-run
 ```
 
-Fuente: los PDFs son la única fuente pública con las mismas mediciones
-(estado-mes, 1985+, cuatro variables). La red reducida CSV (2013+) es
-estación-mes y no reproduce la lluvia; sirve para validar temperatura, no para
-reemplazar los PDFs. Detalle en `../docs/fuentes.md`.
+**Diferencia con los PDFs:** la temperatura es casi idéntica (±0.3 °C); la
+lluvia es una estimación de la red reducida y difiere del PDF oficial ~5–25%.
+Enlaces y ejemplos en `../docs/fuentes.md`.
 
-En el servidor: `make estatal-pdf` y el DAG `datos_publicos_estatal_pdf`
+El loader de PDFs (`load_estatal_pdf.py`, `make estatal-pdf`, DAG
+`datos_publicos_estatal_pdf`) queda como **legacy/opcional**: su DAG vive en
+`../legacy_dags/` y **no se monta en Airflow**. Solo sirve para la tabla
+estatal oficial exacta.
+
+En el servidor: `make estatal-csv` y el DAG `datos_publicos_estatal_csv`
 (día 6 a las 08:00).
 
 ---

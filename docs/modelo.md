@@ -452,8 +452,14 @@ Solo `ranking = 1`.
 
 Reconstruye el formato ancho de `dbo.clima_hist` (`FECHA`, `Estado`, `Año`,
 `Mes`, `Precipitacion`, `Tmax`, `Tmed`, `Tmin`, `Tdiff`) desde
-`clima_estatal_mensual`. Sirve para migrar reportes existentes sin cambiar
+`vw_clima_estatal_vigente`. Sirve para migrar reportes existentes sin cambiar
 consultas de inmediato.
+
+### `vw_clima_estatal_vigente`
+
+Una fila por entidad-variable-año-mes. Prioriza `SMN_RED_CSV` (red reducida)
+y usa `PDF_ESTATAL` solo si falta el mes. Es la base de
+`vw_clima_hist_compat`.
 
 ---
 
@@ -462,12 +468,16 @@ consultas de inmediato.
 - `dbo.clima_hist` **no se toca**.
 - `carga_inicial/sql/05_migrar_clima_hist.sql` copia sus filas a `clima_estatal_mensual`
   como `PDF_ESTATAL`, de forma idempotente, **solo para 2023 en adelante**.
-- `actualizacion/load_estatal_pdf.py` mantiene `clima_estatal_mensual` desde
-  los PDFs estatales del SMN (DAG `datos_publicos_estatal_pdf`, día 6). Es el
-  reemplazo del flujo legacy: descarga a un temporal, parsea con
-  `pdfplumber` y borra los archivos al terminar. Solo escribe 2023+.
-- `vw_clima_hist_compat` permite leer el modelo nuevo con el esquema
-  antiguo (ventana 2023+).
+- `actualizacion/load_estatal_csv.py` es la fuente **operativa**: descarga la
+  red reducida mensual del SMN (CSV), agrega por entidad y carga
+  `clima_estatal_mensual` con `fuente_id = SMN_RED_CSV` (DAG
+  `datos_publicos_estatal_csv`, día 6).
+- `actualizacion/load_estatal_pdf.py` queda como **legacy/opcional** para la
+  tabla estatal oficial exacta desde PDFs; su DAG vive en `legacy_dags/` y no
+  se monta en Airflow.
+- `vw_clima_estatal_vigente` prioriza `SMN_RED_CSV` y usa `PDF_ESTATAL` solo
+  si falta el mes. `vw_clima_hist_compat` se apoya en esa vista para
+  reproducir el esquema antiguo (2023+).
 - Si más adelante quieres retirar `clima_hist`, primero valida que todos los
   reportes usen la vista de compatibilidad o las tablas nuevas.
 

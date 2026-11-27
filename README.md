@@ -90,12 +90,14 @@ public_data_etl/
 │   ├── load_clima_smn.py
 │   ├── load_clima_sih.py
 │   ├── load_claves_geo.py
+│   ├── load_estatal_csv.py
 │   ├── load_estatal_pdf.py
 │   ├── build_clima_clientes.py
 │   ├── build_mensual.py
 │   ├── sql/
 │   │   ├── 10_claves_geo_dbo.sql
-│   │   └── 11_clima_clientes.sql
+│   │   ├── 11_clima_clientes.sql
+│   │   └── 12_estatal_csv.sql
 │   └── queries/
 │       ├── README.md
 │       ├── 01_vigente.sql
@@ -110,8 +112,11 @@ public_data_etl/
 │   ├── datos_publicos_mensual_dag.py
 │   ├── datos_publicos_claves_geo_dag.py
 │   ├── datos_publicos_clima_clientes_dag.py
-│   ├── datos_publicos_estatal_pdf_dag.py
+│   ├── datos_publicos_estatal_csv_dag.py
 │   └── datos_publicos_historico_dag.py
+├── legacy_dags/                  # no se monta en Airflow
+│   ├── README.md
+│   └── datos_publicos_estatal_pdf_dag.py
 ├── scripts/
 │   ├── etl-infisical.sh
 │   └── etl-helpers.sh
@@ -420,32 +425,40 @@ Decisiones, mediciones y limitaciones completas en
 [`docs/clima_clientes.md`](docs/clima_clientes.md). En el servidor se ejecuta
 con `make clima-clientes` y el DAG diario de las 03:00.
 
-### 6.6 Resúmenes estatales mensuales (PDFs)
+### 6.6 Serie estatal mensual (CSV de la red reducida)
 
-Reemplaza el flujo legacy `auto_conagua_download.py`. Descarga los PDFs
-anuales de TMAX, TMED, TMIN y PREC del SMN, extrae la tabla estado-mes con
-`pdfplumber` y hace *upsert* en `clima_estatal_mensual` (`PDF_ESTATAL`).
+Reemplaza el flujo legacy `auto_conagua_download.py` y evita descargar o
+parsear PDFs. Descarga los CSV mensuales de TMax, TMed, TMin y Lluv del SMN,
+agrega por entidad federativa (media simple de estaciones) y hace *upsert* en
+`clima_estatal_mensual` (`SMN_RED_CSV`).
 
 ```bash
-python -m actualizacion.load_estatal_pdf              # año actual y anterior
-python -m actualizacion.load_estatal_pdf --todo        # 2023 a la fecha
-python -m actualizacion.load_estatal_pdf --desde 2024 --hasta 2026
-python -m actualizacion.load_estatal_pdf --variables TMAX,PREC
-python -m actualizacion.load_estatal_pdf --dry-run
+python -m actualizacion.load_estatal_csv              # últimos 3 meses
+python -m actualizacion.load_estatal_csv --todo        # 2023 a la fecha
+python -m actualizacion.load_estatal_csv --desde 2025-01 --hasta 2025-12
+python -m actualizacion.load_estatal_csv --variables TMax,Lluv
+python -m actualizacion.load_estatal_csv --dry-run
 ```
 
-- Descarga a un directorio temporal y **borra los PDFs al terminar**, incluso
-  si falla. Con `--conservar` se quedan para depurar.
-- Solo reemplaza los pares `(año, variable)` que se descargaron y parsearon
-  bien; si un PDF falla, conserva lo anterior.
+- **No escribe archivos**: descarga y agrega en memoria.
+- El CSV es **estación-mes**; la tabla estatal se obtiene como media simple
+  por estado.
+- `vw_clima_estatal_vigente` prioriza `SMN_RED_CSV` y usa `PDF_ESTATAL` solo
+  si falta el mes.
 - No toca `dbo.clima_hist`; `vw_clima_hist_compat` reproduce el formato ancho
-  para 2023+.
-- Los PDFs siguen siendo la única fuente pública con las mismas mediciones
-  (estado-mes, 1985+, cuatro variables). La red reducida CSV es 2013+,
-  estación-mes y no reproduce la lluvia; se puede usar para validar
-  temperatura, no para reemplazar los PDFs.
+  para 2023+ usando la vista vigente.
 
-En el servidor: `make estatal-pdf` y el DAG mensual del día 6 a las 08:00.
+**Diferencia con los PDFs:** la temperatura queda prácticamente idéntica
+(±0.3 °C), pero la lluvia es una estimación de la red reducida y difiere del
+PDF oficial ~5–25%. Detalle y enlaces en
+[`docs/fuentes.md`](docs/fuentes.md).
+
+El loader de PDFs (`load_estatal_pdf.py`, `make estatal-pdf`, DAG
+`datos_publicos_estatal_pdf`) queda como **legacy/opcional**: su DAG vive en
+`legacy_dags/` y **no se monta en Airflow**. Solo sirve para obtener la tabla
+estatal oficial exacta.
+
+En el servidor: `make estatal-csv` y el DAG mensual del día 6 a las 08:00.
 
 ---
 
@@ -610,7 +623,7 @@ make inicial ARGS="--init"
 make backfill ARGS="--tipo diario"
 make claves-geo ARGS="--tabla ambas"
 make clima-clientes ARGS="--todo"
-make estatal-pdf ARGS="--todo"
+make estatal-csv ARGS="--todo"
 make query QUERY=04_calidad_datos.sql
 
 # Servidor: machine.env es root:640, por eso sudo
@@ -698,7 +711,8 @@ sudo make check-infisical
 | `make backfill ARGS="..."` | Ejecuta `carga_inicial.backfill_clima`. |
 | `make claves-geo ARGS="..."` | Rellena `cvegeo`/`cve_ent` en `dbo.Clientes` y `dbo.CEDIS`. |
 | `make clima-clientes ARGS="..."` | Deriva clima mensual para las ubicaciones de clientes. |
-| `make estatal-pdf ARGS="..."` | Carga los PDFs estatales mensuales del SMN. |
+| `make estatal-csv ARGS="..."` | Carga la serie estatal desde la red reducida (CSV). |
+| `make estatal-pdf ARGS="..."` | **Legacy**: carga los PDFs estatales (DAG pausado). |
 | `make query QUERY=...` | Ejecuta una query de `actualizacion/queries/`. |
 | `make etl MODULO=... ARGS="..."` | Ejecuta cualquier módulo del repo. |
 | `make etl-infisical ...` | Fuerza el modo Infisical. |
@@ -773,8 +787,13 @@ horario y sus tareas.
 | `datos_publicos_mensual` | Automático | Día 3 a las 07:00 | Carga el TXT oficial del SMN y recalcula la serie propia del rango de años. |
 | `datos_publicos_claves_geo` | Automático | 02:00 | Rellena `cvegeo`/`cve_ent` en `dbo.Clientes` y `dbo.CEDIS` solo para filas nuevas. |
 | `datos_publicos_clima_clientes` | Automático | 03:00 | Deriva clima mensual (NEAREST/IDW) para las ubicaciones de `dbo.Clientes` (k=5, últimos 2 meses). |
-| `datos_publicos_estatal_pdf` | Automático | Día 6 a las 08:00 | Descarga los PDFs estatales del SMN y actualiza `clima_estatal_mensual` (año actual y anterior). |
+| `datos_publicos_estatal_csv` | Automático | Día 6 a las 08:00 | Carga la serie estatal desde la red reducida (CSV) en `clima_estatal_mensual` (últimos 3 meses). |
 | `datos_publicos_historico_manual` | Manual | — | Carga histórica de clima 2023+ (`carga_inicial.backfill_clima`). |
+
+> El DAG de PDFs vive en **`legacy_dags/`** y **no se monta en Airflow**. Se
+> conserva como referencia; la fuente operativa es `datos_publicos_estatal_csv`.
+> Para ejecutarlo manualmente: `make estatal-pdf ARGS="..."`. No agregues
+> `legacy_dags/` al compose de Airflow.
 
 Los DAGs de clima terminan con una tarea `etl_completo` (`EmptyOperator`) que
 emite un Asset (`datos_publicos_diario_completo`,
