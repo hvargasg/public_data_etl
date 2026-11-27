@@ -37,6 +37,10 @@ COPY comun ./comun
 COPY carga_inicial ./carga_inicial
 COPY actualizacion ./actualizacion
 
+# El contenedor corre como 1000:1000 en Airflow; asegura lectura aunque el
+# checkout del host tenga modo 640.
+RUN chmod -R a+rX /app/comun /app/carga_inicial /app/actualizacion
+
 # `data/` se monta en tiempo de ejecución en /app/data.
 ENTRYPOINT ["python"]
 CMD ["-m", "actualizacion.run_diario", "--help"]
