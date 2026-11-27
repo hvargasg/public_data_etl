@@ -28,14 +28,14 @@ SQL_ENT = """
 INSERT INTO {{schema}}.entidad (cve_ent, nom_ent, version_mg, geom)
 SELECT ?, ?, ?,
        CASE WHEN g.EnvelopeAngle() > 90 THEN g.ReorientObject() ELSE g END
-FROM (SELECT geography::STGeomFromText(?, 4326).MakeValid() AS g) x
+FROM (SELECT geography::STGeomFromText(CAST(? AS NVARCHAR(MAX)), 4326).MakeValid() AS g) x
 """
 
 SQL_MUN = """
 INSERT INTO {{schema}}.municipio (cvegeo, cve_ent, cve_mun, nom_mun, version_mg, geom)
 SELECT ?, ?, ?, ?, ?,
        CASE WHEN g.EnvelopeAngle() > 90 THEN g.ReorientObject() ELSE g END
-FROM (SELECT geography::STGeomFromText(?, 4326).MakeValid() AS g) x
+FROM (SELECT geography::STGeomFromText(CAST(? AS NVARCHAR(MAX)), 4326).MakeValid() AS g) x
 """
 
 SQL_LOC = """
@@ -43,7 +43,7 @@ INSERT INTO {{schema}}.localidad
     (cve_loc, cvegeo, cve_loc_inegi, nom_loc, ambito, version_mg, geom)
 SELECT ?, ?, ?, ?, ?, ?,
        CASE WHEN g.EnvelopeAngle() > 90 THEN g.ReorientObject() ELSE g END
-FROM (SELECT geography::STGeomFromText(?, 4326).MakeValid() AS g) x
+FROM (SELECT geography::STGeomFromText(CAST(? AS NVARCHAR(MAX)), 4326).MakeValid() AS g) x
 """
 
 SQL_AGEB = """
@@ -51,7 +51,7 @@ INSERT INTO {{schema}}.ageb
     (cve_ageb, cve_loc, cvegeo, cve_ageb_inegi, tipo, version_mg, geom)
 SELECT ?, ?, ?, ?, ?, ?,
        CASE WHEN g.EnvelopeAngle() > 90 THEN g.ReorientObject() ELSE g END
-FROM (SELECT geography::STGeomFromText(?, 4326).MakeValid() AS g) x
+FROM (SELECT geography::STGeomFromText(CAST(? AS NVARCHAR(MAX)), 4326).MakeValid() AS g) x
 """
 
 # Nombres de capa del MG integrado y del empaquetado por entidad.
