@@ -90,6 +90,7 @@ public_data_etl/
 │   ├── load_clima_smn.py
 │   ├── load_clima_sih.py
 │   ├── load_claves_geo.py
+│   ├── load_estatal_pdf.py
 │   ├── build_clima_clientes.py
 │   ├── build_mensual.py
 │   ├── sql/
@@ -109,6 +110,7 @@ public_data_etl/
 │   ├── datos_publicos_mensual_dag.py
 │   ├── datos_publicos_claves_geo_dag.py
 │   ├── datos_publicos_clima_clientes_dag.py
+│   ├── datos_publicos_estatal_pdf_dag.py
 │   └── datos_publicos_historico_dag.py
 ├── scripts/
 │   ├── etl-infisical.sh
@@ -418,6 +420,33 @@ Decisiones, mediciones y limitaciones completas en
 [`docs/clima_clientes.md`](docs/clima_clientes.md). En el servidor se ejecuta
 con `make clima-clientes` y el DAG diario de las 03:00.
 
+### 6.6 Resúmenes estatales mensuales (PDFs)
+
+Reemplaza el flujo legacy `auto_conagua_download.py`. Descarga los PDFs
+anuales de TMAX, TMED, TMIN y PREC del SMN, extrae la tabla estado-mes con
+`pdfplumber` y hace *upsert* en `clima_estatal_mensual` (`PDF_ESTATAL`).
+
+```bash
+python -m actualizacion.load_estatal_pdf              # año actual y anterior
+python -m actualizacion.load_estatal_pdf --todo        # 2023 a la fecha
+python -m actualizacion.load_estatal_pdf --desde 2024 --hasta 2026
+python -m actualizacion.load_estatal_pdf --variables TMAX,PREC
+python -m actualizacion.load_estatal_pdf --dry-run
+```
+
+- Descarga a un directorio temporal y **borra los PDFs al terminar**, incluso
+  si falla. Con `--conservar` se quedan para depurar.
+- Solo reemplaza los pares `(año, variable)` que se descargaron y parsearon
+  bien; si un PDF falla, conserva lo anterior.
+- No toca `dbo.clima_hist`; `vw_clima_hist_compat` reproduce el formato ancho
+  para 2023+.
+- Los PDFs siguen siendo la única fuente pública con las mismas mediciones
+  (estado-mes, 1985+, cuatro variables). La red reducida CSV es 2013+,
+  estación-mes y no reproduce la lluvia; se puede usar para validar
+  temperatura, no para reemplazar los PDFs.
+
+En el servidor: `make estatal-pdf` y el DAG mensual del día 6 a las 08:00.
+
 ---
 
 ## 7. Tablas principales
@@ -581,6 +610,7 @@ make inicial ARGS="--init"
 make backfill ARGS="--tipo diario"
 make claves-geo ARGS="--tabla ambas"
 make clima-clientes ARGS="--todo"
+make estatal-pdf ARGS="--todo"
 make query QUERY=04_calidad_datos.sql
 
 # Servidor: machine.env es root:640, por eso sudo
@@ -668,6 +698,7 @@ sudo make check-infisical
 | `make backfill ARGS="..."` | Ejecuta `carga_inicial.backfill_clima`. |
 | `make claves-geo ARGS="..."` | Rellena `cvegeo`/`cve_ent` en `dbo.Clientes` y `dbo.CEDIS`. |
 | `make clima-clientes ARGS="..."` | Deriva clima mensual para las ubicaciones de clientes. |
+| `make estatal-pdf ARGS="..."` | Carga los PDFs estatales mensuales del SMN. |
 | `make query QUERY=...` | Ejecuta una query de `actualizacion/queries/`. |
 | `make etl MODULO=... ARGS="..."` | Ejecuta cualquier módulo del repo. |
 | `make etl-infisical ...` | Fuerza el modo Infisical. |
@@ -742,6 +773,7 @@ horario y sus tareas.
 | `datos_publicos_mensual` | Automático | Día 3 a las 07:00 | Carga el TXT oficial del SMN y recalcula la serie propia del rango de años. |
 | `datos_publicos_claves_geo` | Automático | 02:00 | Rellena `cvegeo`/`cve_ent` en `dbo.Clientes` y `dbo.CEDIS` solo para filas nuevas. |
 | `datos_publicos_clima_clientes` | Automático | 03:00 | Deriva clima mensual (NEAREST/IDW) para las ubicaciones de `dbo.Clientes` (k=5, últimos 2 meses). |
+| `datos_publicos_estatal_pdf` | Automático | Día 6 a las 08:00 | Descarga los PDFs estatales del SMN y actualiza `clima_estatal_mensual` (año actual y anterior). |
 | `datos_publicos_historico_manual` | Manual | — | Carga histórica de clima 2023+ (`carga_inicial.backfill_clima`). |
 
 Los DAGs de clima terminan con una tarea `etl_completo` (`EmptyOperator`) que

@@ -4,6 +4,7 @@ Este bloque contiene **todo lo recurrente**:
 
 - Carga de clima diario del SMN y del SIH.
 - Carga de la serie mensual oficial del SMN.
+- Carga de los resúmenes estatales mensuales del SMN (PDFs).
 - Construcción de la serie mensual propia (`CALCULADO`).
 - Clima mensual derivado para los sitios.
 - Claves geográficas (`cvegeo`, `cve_ent`) para las tablas de negocio `dbo`.
@@ -34,6 +35,7 @@ actualizacion/
 ├── load_clima_smn.py
 ├── load_clima_sih.py
 ├── load_claves_geo.py
+├── load_estatal_pdf.py
 ├── build_clima_clientes.py
 ├── build_mensual.py
 ├── sql/
@@ -216,7 +218,46 @@ Decisiones y mediciones completas en `../docs/clima_clientes.md`.
 
 ---
 
-## 6. Regla calculado vs oficial
+## 6. Resúmenes estatales mensuales (PDFs)
+
+```bash
+python -m actualizacion.load_estatal_pdf
+```
+
+Reemplaza el flujo legacy `auto_conagua_download.py`. Descarga los PDFs
+anuales de TMAX, TMED, TMIN y PREC del SMN, extrae la tabla estado-mes con
+`pdfplumber`, y reemplaza en `clima_estatal_mensual` los pares
+`(año, variable)` descargados (`fuente_id = PDF_ESTATAL`).
+
+- **No usa CSV intermedios** ni `dbo.clima_hist`: parsea el PDF en memoria y
+  escribe en el modelo nuevo.
+- Descarga a un directorio temporal y **borra los PDFs al terminar**, incluso
+  si falla. `--conservar` los deja para depurar.
+- Si un PDF falla, conserva los datos anteriores de ese par año-variable.
+- Por defecto procesa el **año actual y el anterior**.
+- Solo carga 2023+ (ventana del modelo). `dbo.clima_hist` sigue siendo la
+  fuente para 1985–2022.
+
+Opciones:
+
+```bash
+python -m actualizacion.load_estatal_pdf --todo
+python -m actualizacion.load_estatal_pdf --desde 2024 --hasta 2026
+python -m actualizacion.load_estatal_pdf --variables TMAX,PREC
+python -m actualizacion.load_estatal_pdf --dry-run
+```
+
+Fuente: los PDFs son la única fuente pública con las mismas mediciones
+(estado-mes, 1985+, cuatro variables). La red reducida CSV (2013+) es
+estación-mes y no reproduce la lluvia; sirve para validar temperatura, no para
+reemplazar los PDFs. Detalle en `../docs/fuentes.md`.
+
+En el servidor: `make estatal-pdf` y el DAG `datos_publicos_estatal_pdf`
+(día 6 a las 08:00).
+
+---
+
+## 7. Regla calculado vs oficial
 
 - `clima_mensual` guarda filas `CALCULADO / PRELIMINAR` y
   `OFICIAL / DEFINITIVO`.
@@ -229,7 +270,7 @@ Detalle en `../docs/agregaciones.md`.
 
 ---
 
-## 7. Queries de operación
+## 8. Queries de operación
 
 ```bash
 python -m actualizacion.run_query --archivo actualizacion/queries/01_vigente.sql
@@ -250,7 +291,7 @@ También puedes abrirlas en SSMS/Azure Data Studio y editar las variables
 
 ---
 
-## 8. SIH bloqueado
+## 9. SIH bloqueado
 
 Si el SIH devuelve HTML o redirecciones 307, descarga los CSV manualmente y
 carga desde una carpeta local:
@@ -264,7 +305,7 @@ parsearlas.
 
 ---
 
-## 9. Bitácora
+## 10. Bitácora
 
 Cada paso escribe en `datos_publicos.carga_log`.
 

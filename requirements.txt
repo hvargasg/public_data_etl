@@ -7,6 +7,9 @@ pyodbc>=5.0
 requests>=2.31
 python-dotenv>=1.0
 
+# PDFs estatales del SMN (load_estatal_pdf)
+pdfplumber>=0.11
+
 # Geografía (solo para load_inegi)
 geopandas>=0.14
 shapely>=2.0

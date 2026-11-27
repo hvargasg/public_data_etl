@@ -462,6 +462,10 @@ consultas de inmediato.
 - `dbo.clima_hist` **no se toca**.
 - `carga_inicial/sql/05_migrar_clima_hist.sql` copia sus filas a `clima_estatal_mensual`
   como `PDF_ESTATAL`, de forma idempotente, **solo para 2023 en adelante**.
+- `actualizacion/load_estatal_pdf.py` mantiene `clima_estatal_mensual` desde
+  los PDFs estatales del SMN (DAG `datos_publicos_estatal_pdf`, día 6). Es el
+  reemplazo del flujo legacy: descarga a un temporal, parsea con
+  `pdfplumber` y borra los archivos al terminar. Solo escribe 2023+.
 - `vw_clima_hist_compat` permite leer el modelo nuevo con el esquema
   antiguo (ventana 2023+).
 - Si más adelante quieres retirar `clima_hist`, primero valida que todos los
