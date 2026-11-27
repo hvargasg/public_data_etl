@@ -507,8 +507,12 @@ En modo Infisical el wrapper:
 2. Hace login con Universal Auth, sin imprimir credenciales.
 3. Exporta la carpeta `INFISICAL_PATH` (por defecto `/datos_publicos_etl`).
 4. Comprueba que estén `DB_SERVER`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`.
-5. Ejecuta el contenedor pasando los secretos con `--env-file` desde un archivo
-   temporal con permisos `600`, que se borra al terminar.
+5. Convierte el JSON de Infisical a líneas `KEY=valor` (sin comillas) y ejecuta
+   el contenedor con `--env-file` desde un archivo temporal con permisos `600`,
+   que se borra al terminar.
+
+El host necesita `jq` para esa conversión. Docker `--env-file` no elimina las
+comillas que agrega el formato `dotenv` de Infisical.
 
 Variables reconocidas por el wrapper: `ETL_MODULO`, `SECRETS_SOURCE`,
 `INFISICAL_MACHINE_FILE`, `INFISICAL_ENV`, `INFISICAL_PATH`, `ETL_IMAGE`,

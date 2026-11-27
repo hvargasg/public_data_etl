@@ -30,6 +30,8 @@
 #   ETL_DATA                  datos locales a montar en /app/data (por defecto ./data)
 #   ETL_UID                   usuario:grupo del contenedor (por defecto 1000:1000)
 #   ETL_DOCKER_NETWORK        red Docker opcional (vacía = red por defecto)
+#
+# Requiere jq en el host para convertir el JSON de Infisical a --env-file.
 
 set -euo pipefail
 
@@ -154,18 +156,41 @@ case "$SECRETS_SOURCE" in
             INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET \
             CLIENT_ID_VALUE CLIENT_SECRET_VALUE
 
-        # Archivo temporal: docker --env-file no admite valores multilínea.
+        if ! command -v jq >/dev/null 2>&1; then
+            printf '[etl] ERROR: falta jq en el host para convertir los secretos.\n' >&2
+            exit 1
+        fi
+
+        # Archivos temporales: docker --env-file no admite valores multilínea y
+        # el formato dotenv de Infisical puede incluir comillas que Docker no
+        # elimina. Se exporta JSON y se convierte a KEY=valor literal.
         umask 077
-        SECRETS_FILE="$(mktemp "${TMPDIR:-/tmp}/etl-secrets.XXXXXX")"
-        trap 'rm -f "$SECRETS_FILE"' EXIT
+        SECRETS_JSON="$(mktemp "${TMPDIR:-/tmp}/etl-secrets.XXXXXX.json")"
+        SECRETS_FILE="$(mktemp "${TMPDIR:-/tmp}/etl-secrets.XXXXXX.env")"
+        trap 'rm -f "$SECRETS_FILE" "$SECRETS_JSON"' EXIT
 
         infisical export \
             --domain="$INFISICAL_API_URL" \
             --projectId="$INFISICAL_PROJECT_ID" \
             --env="$INFISICAL_ENV" \
             --path="$INFISICAL_PATH" \
-            --format=dotenv \
-            --silent > "$SECRETS_FILE"
+            --format=json \
+            --silent > "$SECRETS_JSON"
+
+        if ! jq -e '
+            type == "array" and
+            all(.[];
+                (.key | type) == "string" and
+                .value != null and
+                (((.value | tostring) | test("[\\r\\n]")) | not)
+            )
+        ' "$SECRETS_JSON" >/dev/null; then
+            printf '[etl] ERROR: Infisical devolvió un JSON no válido o con valores multilínea.\n' >&2
+            exit 1
+        fi
+
+        jq -r '.[] | select(.key != null and .value != null) | "\(.key)=\(.value)"' \
+            "$SECRETS_JSON" > "$SECRETS_FILE"
 
         faltantes=()
         for clave in DB_SERVER DB_NAME DB_USER DB_PASSWORD; do
