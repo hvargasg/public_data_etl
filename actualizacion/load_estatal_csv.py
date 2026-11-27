@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import unicodedata
 from datetime import date
 from pathlib import Path
 
@@ -70,6 +71,37 @@ ABREV_ENTIDAD = {
     "TAMP": "28", "TAMPS": "28", "TLAX": "29", "VER": "30",
     "YUC": "31", "ZAC": "32",
 }
+
+# Alias de nombres largos que no coinciden exactamente con INEGI.
+ALIAS_ENTIDAD = {
+    "COAHUILA": "05",
+    "ESTADO DE MEXICO": "15",
+    "MEXICO": "15",
+    "MICHOACAN": "16",
+    "VERACRUZ": "30",
+    "DISTRITO FEDERAL": "09",
+    "CDMX": "09",
+}
+
+
+def normalizar(texto: str) -> str:
+    """Mayúsculas, sin acentos, con espacios simples."""
+    sin_acentos = "".join(
+        c for c in unicodedata.normalize("NFKD", texto)
+        if not unicodedata.combining(c)
+    )
+    return " ".join(sin_acentos.upper().split())
+
+
+def mapa_entidades(engine) -> dict[str, str]:
+    """Abreviatura o nombre largo -> cve_ent."""
+    sql = render_sql("SELECT cve_ent, nom_ent FROM {{schema}}.entidad")
+    with engine.connect() as conn:
+        filas = conn.exec_driver_sql(sql).mappings().all()
+    mapa = {normalizar(f["nom_ent"]): f["cve_ent"] for f in filas}
+    mapa.update({normalizar(k): v for k, v in ABREV_ENTIDAD.items()})
+    mapa.update({normalizar(k): v for k, v in ALIAS_ENTIDAD.items()})
+    return mapa
 
 
 def month_start(value: str | None, default: date) -> date:
@@ -123,10 +155,17 @@ def descargar(session: requests.Session, anio: int, mes: int, archivo: str) -> s
     if respuesta.status_code == 404:
         return None
     respuesta.raise_for_status()
-    return respuesta.content.decode("latin-1")
+    # Los CSV recientes de temperatura vienen en UTF-8; los históricos y la
+    # lluvia vienen en latin-1/cp1252.
+    for encoding in ("utf-8-sig", "latin-1"):
+        try:
+            return respuesta.content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("no se pudo decodificar el CSV")
 
 
-def agregar_por_estado(texto: str) -> dict[str, tuple[float, int]]:
+def agregar_por_estado(texto: str, mapa: dict[str, str]) -> dict[str, tuple[float, int]]:
     """Media simple por entidad. Devuelve cve_ent -> (media, n_estaciones)."""
     lector = csv.DictReader(io.StringIO(texto))
     if not lector.fieldnames:
@@ -146,8 +185,8 @@ def agregar_por_estado(texto: str) -> dict[str, tuple[float, int]]:
 
     acumulado: dict[str, list[float]] = {}
     for fila in lector:
-        edo = (fila.get(col_edo) or "").strip().upper()
-        cve = ABREV_ENTIDAD.get(edo)
+        edo = (fila.get(col_edo) or "").strip()
+        cve = mapa.get(normalizar(edo))
         if not cve:
             continue
         crudo = (fila.get(col_valor) or "").strip()
@@ -222,6 +261,7 @@ def main() -> int:
     engine = get_engine()
     exec_sql_file(engine, SQL_DDL)
     variables_id = get_variable_map(engine)
+    mapa = mapa_entidades(engine)
     fuente_id = get_fuente_id(engine, "SMN_RED_CSV")
 
     session = requests.Session()
@@ -245,7 +285,7 @@ def main() -> int:
                 if texto is None:
                     errores.append(f"{archivo} {anio}-{mes:02d}: sin archivo (404)")
                     continue
-                agregado = agregar_por_estado(texto)
+                agregado = agregar_por_estado(texto, mapa)
                 if not agregado:
                     raise ValueError("sin estaciones válidas")
                 for cve, (valor, n) in agregado.items():

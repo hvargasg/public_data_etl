@@ -153,7 +153,7 @@ la red reducida en CSV; la tabla estado-mes que se muestra en la página
 | Grano | estación-mes | estado-mes |
 | Cobertura | 2013+ | 1985+ |
 | Variables | TMax, TMed, TMin, Lluv | TMAX, TMED, TMIN, PREC |
-| Formato | CSV (`latin-1`) | PDF (tabla) |
+| Formato | CSV (UTF-8 o latin-1) | PDF (tabla) |
 | `fuente_id` | `SMN_RED_CSV` | `PDF_ESTATAL` |
 | Uso actual | **operativo** | legacy/opcional |
 
