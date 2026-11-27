@@ -245,12 +245,15 @@ def rango_meses(
 
 def sincronizar_ubicaciones(engine) -> int:
     """Inserta celdas nuevas y actualiza el mapa cliente -> celda."""
+    contar = render_sql(f"SELECT COUNT(*) FROM {S}.cliente_ubicacion")
     with engine.begin() as conn:
-        nuevas = conn.exec_driver_sql(render_sql(SQL_INSERT_CELDAS)).rowcount
+        antes = int(conn.exec_driver_sql(contar).scalar_one())
+        conn.exec_driver_sql(render_sql(SQL_INSERT_CELDAS))
         conn.exec_driver_sql(render_sql(SQL_ACTUALIZA_CELDAS))
         conn.exec_driver_sql(render_sql(SQL_BORRA_MAPA_VIEJO))
         conn.exec_driver_sql(render_sql(SQL_ACTUALIZA_MAPA))
-    return max(nuevas, 0)
+        despues = int(conn.exec_driver_sql(contar).scalar_one())
+    return despues - antes
 
 
 def construir_puente(

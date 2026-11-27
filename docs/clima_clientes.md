@@ -344,9 +344,10 @@ inmediato con `--recalcular-puente`.
 
 ### 7.5 Celdas con vecinas lejanas
 
-48 celdas tienen su estación OPERANDO más cercana a más de 50 km (máx.
-68.5 km). El dato se calcula igual, pero debe tratarse como baja confianza.
-Se puede detectar con `cliente_estacion.ranking = 1 AND distancia_km > 50`.
+**16 celdas** (48 puntos de clientes antes de agrupar) tienen su estación
+OPERANDO más cercana a más de 50 km (máx. 68.5 km). El dato se calcula igual,
+pero debe tratarse como baja confianza. Se puede detectar con
+`cliente_estacion.ranking = 1 AND distancia_km > 50`.
 
 ---
 
