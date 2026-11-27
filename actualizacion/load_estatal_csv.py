@@ -294,6 +294,10 @@ def main() -> int:
             hist = 0
             if not args.sin_clima_hist:
                 hist = sincronizar_clima_hist(engine, desde, hasta)
+                if hist:
+                    with log_carga(engine, "sync_clima_hist") as sinfo:
+                        sinfo["filas"] = hist
+                        sinfo["mensaje"] = f"{desde:%Y-%m}; desde --auto"
             print(f"{desde:%Y-%m} ya está cargado; clima_hist: {hist:,} filas")
             return 0
 
