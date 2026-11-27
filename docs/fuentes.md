@@ -155,7 +155,8 @@ Página oficial para elegir el año:
 > La ruta de los PDFs lleva acentos codificados (`Climatolog%C3%ADa` y
 > `Pron%C3%B3stico%20clim%C3%A1tico`). Sin ellos el servidor devuelve error 500.
 
-Estos productos se pueden agregar como fuentes nuevas sin cambiar el modelo.
+Los productos que aún no se cargan (extremos, normales y red reducida
+opcional) se pueden agregar como fuentes nuevas sin cambiar el modelo.
 
 ---
 
