@@ -17,6 +17,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Ejecuta una query SQL de control.")
     parser.add_argument("--archivo", required=True)
     parser.add_argument("--limite", type=int, default=200)
+    parser.add_argument(
+        "--ejecutar",
+        action="store_true",
+        help="Ejecuta el archivo como DML/DDL y hace commit (no imprime filas).",
+    )
     args = parser.parse_args()
 
     path = Path(args.archivo)
@@ -25,6 +30,13 @@ def main() -> int:
 
     sql = render_sql(path.read_text(encoding="utf-8"))
     engine = get_engine()
+
+    if args.ejecutar:
+        with engine.begin() as conn:
+            result = conn.exec_driver_sql(sql)
+        print(f"Ejecutado. Filas afectadas: {result.rowcount}")
+        return 0
+
     df = read_sql(engine, sql)
 
     if df.empty:
