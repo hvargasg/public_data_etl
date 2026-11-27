@@ -189,6 +189,8 @@ def tarea_etl(
     modulo: str = "actualizacion.run_diario",
     mem_limit: str = "4g",
     timeout: timedelta = timedelta(hours=2),
+    do_xcom_push: bool = False,
+    xcom_all: bool = False,
     **kwargs,
 ) -> DockerOperatorSinPlantillas:
     """
@@ -228,7 +230,8 @@ def tarea_etl(
         mount_tmp_dir=False,
         auto_remove="success",
         force_pull=False,
-        do_xcom_push=False,
+        do_xcom_push=do_xcom_push,
+        xcom_all=xcom_all,
         execution_timeout=timeout,
         **kwargs,  # p. ej. retries=2, trigger_rule="all_done"
     )

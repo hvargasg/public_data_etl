@@ -230,6 +230,15 @@ def cargar(
     return len(filas)
 
 
+def _marcar_nuevo(nuevo: bool) -> None:
+    """Última línea de stdout: el DAG la lee para emitir el Asset.
+
+    Se imprime siempre, incluso cuando no hay datos nuevos o es dry-run, para
+    que el ``DockerOperator`` pueda distinguir "no-op" de "cargó el mes".
+    """
+    print(f"NUEVO_DATO={1 if nuevo else 0}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Carga la serie estatal mensual desde la red reducida (CSV)."
@@ -266,6 +275,7 @@ def main() -> int:
         desde = hasta = mes_anterior()
         if desde < date(ANIO_MINIMO, 1, 1):
             print("El mes anterior está fuera de la ventana del modelo.")
+            _marcar_nuevo(False)
             return 0
         meses = [(desde.year, desde.month)]
     else:
@@ -299,6 +309,7 @@ def main() -> int:
                         sinfo["filas"] = hist
                         sinfo["mensaje"] = f"{desde:%Y-%m}; desde --auto"
             print(f"{desde:%Y-%m} ya está cargado; clima_hist: {hist:,} filas")
+            _marcar_nuevo(bool(hist))
             return 0
 
     session = requests.Session()
@@ -340,6 +351,7 @@ def main() -> int:
     if not pares_ok:
         if args.auto:
             print("Sin datos nuevos todavía; se reintentará en la próxima corrida.")
+            _marcar_nuevo(False)
             return 0
         raise SystemExit("No se pudo descargar ni agregar ningún CSV")
 
@@ -356,6 +368,7 @@ def main() -> int:
 
     if args.dry_run:
         print("  simulación: no se escribe en la base")
+        _marcar_nuevo(False)
         return 0
 
     with log_carga(engine, "load_estatal_csv", "SMN_RED_CSV") as info:
@@ -371,6 +384,7 @@ def main() -> int:
 
     print(f"  cargadas {info['filas']:,} filas en clima_estatal_mensual")
     print(f"  clima_hist: {hist:,} filas")
+    _marcar_nuevo(bool(hist))
     return 0
 
 
