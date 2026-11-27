@@ -380,7 +380,8 @@ Si algo sale mal:
 2. Corrige el rango afectado y vuelve a ejecutar el paso (idempotente).
 3. Si necesitas reiniciar todo: `carga_inicial/sql/99_drop.sql` y luego `--init`. **Solo en
    desarrollo.**
-4. `dbo.clima_hist` no se modifica en ningún paso; úsala como referencia.
+4. `dbo.clima_hist` se actualiza de forma incremental para 2023+ (solo meses
+   nuevos o el último incompleto). 1985–2022 no se modifica.
 
 ---
 

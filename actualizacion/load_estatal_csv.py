@@ -43,6 +43,7 @@ from comun.db import (
     log_carga,
     render_sql,
 )
+from actualizacion.sync_clima_hist import mes_anterior, sincronizar_clima_hist
 
 SQL_DDL = Path(__file__).resolve().parent / "sql" / "12_estatal_csv.sql"
 
@@ -239,6 +240,10 @@ def main() -> int:
                         help="Meses hacia atrás si no se indica rango (default: 3).")
     parser.add_argument("--todo", action="store_true",
                         help=f"Desde {ANIO_MINIMO}-01 hasta el mes anterior.")
+    parser.add_argument("--auto", action="store_true",
+                        help="Carga el mes anterior si falta; si ya está, no hace nada.")
+    parser.add_argument("--sin-clima-hist", action="store_true",
+                        help="No sincronizar dbo.clima_hist.")
     parser.add_argument("--variables", default=",".join(VARIABLES),
                         help="TMax,TMed,TMin,Lluv (default: todas).")
     parser.add_argument("--dry-run", action="store_true",
@@ -247,6 +252,8 @@ def main() -> int:
 
     if args.meses < 1:
         raise SystemExit("--meses debe ser mayor o igual a 1")
+    if args.auto and (args.desde or args.hasta or args.todo):
+        raise SystemExit("--auto no se combina con --desde/--hasta/--todo")
 
     variables = [
         v.strip() for v in args.variables.split(",") if v.strip()
@@ -255,14 +262,40 @@ def main() -> int:
     if not variables:
         raise SystemExit(f"--variables debe incluir alguna de {tuple(VARIABLES)}")
 
-    desde, hasta = rango_meses(args.desde, args.hasta, args.todo, args.meses)
-    meses = meses_entre(desde, hasta)
+    if args.auto:
+        desde = hasta = mes_anterior()
+        if desde < date(ANIO_MINIMO, 1, 1):
+            print("El mes anterior está fuera de la ventana del modelo.")
+            return 0
+        meses = [(desde.year, desde.month)]
+    else:
+        desde, hasta = rango_meses(args.desde, args.hasta, args.todo, args.meses)
+        meses = meses_entre(desde, hasta)
 
     engine = get_engine()
     exec_sql_file(engine, SQL_DDL)
     variables_id = get_variable_map(engine)
     mapa = mapa_entidades(engine)
     fuente_id = get_fuente_id(engine, "SMN_RED_CSV")
+
+    if args.auto:
+        sql_check = render_sql(
+            "SELECT COUNT(DISTINCT variable_id) FROM {{schema}}.clima_estatal_mensual "
+            "WHERE fuente_id = ? AND anio = ? AND mes = ?"
+        )
+        with engine.connect() as conn:
+            presentes = int(
+                conn.exec_driver_sql(
+                    sql_check, (fuente_id, desde.year, desde.month)
+                ).scalar()
+                or 0
+            )
+        if presentes >= len(variables):
+            hist = 0
+            if not args.sin_clima_hist:
+                hist = sincronizar_clima_hist(engine, desde, hasta)
+            print(f"{desde:%Y-%m} ya está cargado; clima_hist: {hist:,} filas")
+            return 0
 
     session = requests.Session()
     session.headers.update(
@@ -301,7 +334,12 @@ def main() -> int:
                 print(f"  [aviso] {mensaje}")
 
     if not pares_ok:
+        if args.auto:
+            print("Sin datos nuevos todavía; se reintentará en la próxima corrida.")
+            return 0
         raise SystemExit("No se pudo descargar ni agregar ningún CSV")
+
+    auto_incompleto = args.auto and len(pares_ok) < len(meses) * len(variables)
 
     print(
         f"\nRed reducida {desde:%Y-%m}..{hasta:%Y-%m}: "
@@ -309,6 +347,8 @@ def main() -> int:
     )
     if errores:
         print(f"  avisos: {len(errores)} (ver arriba)")
+    if auto_incompleto:
+        print("  faltan variables del mes; se reintentará en la próxima corrida")
 
     if args.dry_run:
         print("  simulación: no se escribe en la base")
@@ -316,13 +356,17 @@ def main() -> int:
 
     with log_carga(engine, "load_estatal_csv", "SMN_RED_CSV") as info:
         info["filas"] = cargar(engine, filas, pares_ok, fuente_id)
+        hist = 0
+        if not args.sin_clima_hist and not auto_incompleto:
+            hist = sincronizar_clima_hist(engine, desde, hasta)
         info["mensaje"] = (
             f"meses {desde:%Y-%m}..{hasta:%Y-%m}; "
             f"variables {','.join(variables)}; pares {len(pares_ok)}; "
-            f"filas {info['filas']}; avisos {len(errores)}"
+            f"filas {info['filas']}; clima_hist {hist}; avisos {len(errores)}"
         )
 
     print(f"  cargadas {info['filas']:,} filas en clima_estatal_mensual")
+    print(f"  clima_hist: {hist:,} filas")
     return 0
 
 

@@ -465,21 +465,31 @@ y usa `PDF_ESTATAL` solo si falta el mes. Es la base de
 
 ## 9. Compatibilidad con `dbo.clima_hist`
 
-- `dbo.clima_hist` **no se toca**.
+- `dbo.clima_hist` **se actualiza de forma incremental para 2023+**: el ETL
+  solo agrega meses posteriores al último que ya existe, o completa el último
+  si está incompleto. **No reescribe** 2023+ en cada corrida ni toca
+  1985–2022.
 - `carga_inicial/sql/05_migrar_clima_hist.sql` copia sus filas a `clima_estatal_mensual`
   como `PDF_ESTATAL`, de forma idempotente, **solo para 2023 en adelante**.
 - `actualizacion/load_estatal_csv.py` es la fuente **operativa**: descarga la
   red reducida mensual del SMN (CSV), agrega por entidad y carga
-  `clima_estatal_mensual` con `fuente_id = SMN_RED_CSV` (DAG
-  `datos_publicos_estatal_csv`, día 6).
+  `clima_estatal_mensual` con `fuente_id = SMN_RED_CSV`. El DAG
+  `datos_publicos_estatal_csv` corre a diario con `--auto` y llama a
+  `actualizacion/sync_clima_hist.py` para escribir el mes nuevo en
+  `dbo.clima_hist`.
 - `actualizacion/load_estatal_pdf.py` queda como **legacy/opcional** para la
   tabla estatal oficial exacta desde PDFs; su DAG vive en `legacy_dags/` y no
-  se monta en Airflow.
+  se monta en Airflow. También sincroniza `clima_hist` de forma incremental.
+- `actualizacion/sync_clima_hist.py` mantiene la tabla legacy: agrega meses
+  nuevos, completa el último incompleto y respeta 1985–2022. `--recalcular`
+  reescribe explícitamente un rango.
 - `vw_clima_estatal_vigente` prioriza `SMN_RED_CSV` y usa `PDF_ESTATAL` solo
   si falta el mes. `vw_clima_hist_compat` se apoya en esa vista para
   reproducir el esquema antiguo (2023+).
 - Si más adelante quieres retirar `clima_hist`, primero valida que todos los
   reportes usen la vista de compatibilidad o las tablas nuevas.
+- El proceso legacy externo que truncaba `clima_hist` debe retirarse: ahora
+  este ETL es el que la mantiene.
 
 ---
 

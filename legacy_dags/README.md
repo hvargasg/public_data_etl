@@ -30,6 +30,13 @@ sudo make estatal-pdf ARGS="--desde 2024 --hasta 2026"
 sudo make estatal-pdf ARGS="--todo"
 ```
 
+También sincroniza `dbo.clima_hist` de forma incremental (solo meses nuevos o
+el último incompleto). Usa `--sin-clima-hist` si no lo quieres.
+
+> El proceso legacy externo (`auto_conagua_download.py`) hacía `TRUNCATE` de
+> `dbo.clima_hist` y recargaba todo. **Debe retirarse**: ahora este ETL es el
+> que mantiene la tabla de forma incremental para 2023+.
+
 ### Si alguna vez lo necesitas en Airflow
 
 1. Copia el archivo a `dags/`.

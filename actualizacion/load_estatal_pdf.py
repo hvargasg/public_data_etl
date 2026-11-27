@@ -35,6 +35,7 @@ import requests
 
 from comun.constants import ANIO_MINIMO
 from comun.db import get_engine, get_fuente_id, get_variable_map, log_carga, render_sql
+from actualizacion.sync_clima_hist import sincronizar_clima_hist
 
 URL_BASE = (
     "https://smn.conagua.gob.mx/tools/DATA/"
@@ -193,6 +194,8 @@ def main() -> int:
                         help="TMAX,TMED,TMIN,PREC (default: todas).")
     parser.add_argument("--conservar", action="store_true",
                         help="No borrar los PDFs temporales (depuración).")
+    parser.add_argument("--sin-clima-hist", action="store_true",
+                        help="No sincronizar dbo.clima_hist.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Descarga y parsea, pero no escribe en la base.")
     args = parser.parse_args()
@@ -279,13 +282,19 @@ def main() -> int:
 
         with log_carga(engine, "load_estatal_pdf", "PDF_ESTATAL") as info:
             info["filas"] = cargar(engine, filas, pares_ok, fuente_id)
+            hist = 0
+            if not args.sin_clima_hist:
+                hist = sincronizar_clima_hist(
+                    engine, date(desde, 1, 1), date(hasta, 12, 1)
+                )
             info["mensaje"] = (
                 f"años {desde}..{hasta}; variables {','.join(variables)}; "
                 f"pares {len(pares_ok)}; filas {info['filas']}; "
-                f"avisos {len(errores)}"
+                f"clima_hist {hist}; avisos {len(errores)}"
             )
 
         print(f"  cargadas {info['filas']:,} filas en clima_estatal_mensual")
+        print(f"  clima_hist: {hist:,} filas")
         return 0
     finally:
         if args.conservar:

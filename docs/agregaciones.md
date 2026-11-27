@@ -274,6 +274,11 @@ oficial (~5–25%); la temperatura es prácticamente idéntica. Esta tabla **no*
 se calcula desde `clima_mensual`; es una serie independiente para reportes
 estatales y compatibilidad.
 
+`actualizacion/sync_clima_hist.py` escribe el mes nuevo en `dbo.clima_hist` de
+forma incremental: solo agrega meses posteriores al último existente o
+completa el último si está incompleto. No reescribe 2023+ en cada corrida y no
+toca 1985–2022. `--recalcular` reconstruye un rango de forma explícita.
+
 ---
 
 ## 9. Casos borde

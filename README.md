@@ -7,8 +7,10 @@ homologadas con claves oficiales del INEGI (`cve_ent`, `cvegeo`, `cve_loc`,
 `cve_ageb`), cargar datos climáticos de CONAGUA/SMN/SIH y construir **tu propia
 serie mensual** sin depender de que el SMN o el SIH publiquen a tiempo.
 
-La tabla histórica `dbo.clima_hist` **no se modifica**: el modelo nuevo convive
-con ella y ofrece una vista de compatibilidad con el mismo formato.
+La tabla histórica `dbo.clima_hist` se conserva y el ETL la actualiza de forma
+**incremental** para 2023+: agrega el mes nuevo (o completa el último mes
+incompleto) y **nunca reescribe** el histórico 1985–2022. El modelo nuevo
+ofrece además una vista de compatibilidad con el mismo formato.
 
 **Ventana de datos:** el modelo solo carga y calcula clima desde
 **2023-01-01** a la fecha. No almacena el histórico anterior.
@@ -433,11 +435,33 @@ agrega por entidad federativa (media simple de estaciones) y hace *upsert* en
 `clima_estatal_mensual` (`SMN_RED_CSV`).
 
 ```bash
+python -m actualizacion.load_estatal_csv --auto        # mes anterior si falta
 python -m actualizacion.load_estatal_csv              # últimos 3 meses
 python -m actualizacion.load_estatal_csv --todo        # 2023 a la fecha
 python -m actualizacion.load_estatal_csv --desde 2025-01 --hasta 2025-12
-python -m actualizacion.load_estatal_csv --variables TMax,Lluv
 python -m actualizacion.load_estatal_csv --dry-run
+```
+
+Modo `--auto` (el que usa el DAG diario):
+
+- Calcula el **mes anterior** (el último mes cerrado).
+- Si ya está completo en `clima_estatal_mensual`, no descarga nada.
+- Si falta, intenta bajar los CSV; si aún no están publicados (404), termina
+  en success y **reintenta al día siguiente**.
+- Cuando los encuentra, los carga y **se vuelve no-op** hasta el mes
+  siguiente.
+
+`dbo.clima_hist` se actualiza de forma **incremental**:
+
+- Solo agrega meses posteriores al último que ya existe en la tabla.
+- Si el último mes está incompleto (menos de 32 entidades), lo completa.
+- **No reescribe** los meses anteriores de 2023+ en cada corrida.
+- 1985–2022 no se toca.
+
+```bash
+sudo make clima-hist ARGS="--todo"                 # incremental
+sudo make clima-hist ARGS="--recalcular --desde 2023-01 --hasta 2026-10"
+python -m actualizacion.load_estatal_csv --sin-clima-hist
 ```
 
 - **No escribe archivos**: descarga y agrega en memoria.
@@ -445,8 +469,6 @@ python -m actualizacion.load_estatal_csv --dry-run
   por estado.
 - `vw_clima_estatal_vigente` prioriza `SMN_RED_CSV` y usa `PDF_ESTATAL` solo
   si falta el mes.
-- No toca `dbo.clima_hist`; `vw_clima_hist_compat` reproduce el formato ancho
-  para 2023+ usando la vista vigente.
 
 **Diferencia con los PDFs:** la temperatura queda prácticamente idéntica
 (±0.3 °C), pero la lluvia es una estimación de la red reducida y difiere del
@@ -456,9 +478,9 @@ PDF oficial ~5–25%. Detalle y enlaces en
 El loader de PDFs (`load_estatal_pdf.py`, `make estatal-pdf`, DAG
 `datos_publicos_estatal_pdf`) queda como **legacy/opcional**: su DAG vive en
 `legacy_dags/` y **no se monta en Airflow**. Solo sirve para obtener la tabla
-estatal oficial exacta.
+estatal oficial exacta; también sincroniza `clima_hist` de forma incremental.
 
-En el servidor: `make estatal-csv` y el DAG mensual del día 6 a las 08:00.
+En el servidor: `make estatal-csv` y el DAG **diario** de las 08:00.
 
 ---
 
@@ -787,7 +809,7 @@ horario y sus tareas.
 | `datos_publicos_mensual` | Automático | Día 3 a las 07:00 | Carga el TXT oficial del SMN y recalcula la serie propia del rango de años. |
 | `datos_publicos_claves_geo` | Automático | 02:00 | Rellena `cvegeo`/`cve_ent` en `dbo.Clientes` y `dbo.CEDIS` solo para filas nuevas. |
 | `datos_publicos_clima_clientes` | Automático | 03:00 | Deriva clima mensual (NEAREST/IDW) para las ubicaciones de `dbo.Clientes` (k=5, últimos 2 meses). |
-| `datos_publicos_estatal_csv` | Automático | Día 6 a las 08:00 | Carga la serie estatal desde la red reducida (CSV) en `clima_estatal_mensual` (últimos 3 meses). |
+| `datos_publicos_estatal_csv` | Automático | Diario 08:00 | Carga el mes anterior desde la red reducida (CSV) cuando aparece; es no-op después y actualiza `clima_hist` de forma incremental. |
 | `datos_publicos_historico_manual` | Manual | — | Carga histórica de clima 2023+ (`carga_inicial.backfill_clima`). |
 
 > El DAG de PDFs vive en **`legacy_dags/`** y **no se monta en Airflow**. Se

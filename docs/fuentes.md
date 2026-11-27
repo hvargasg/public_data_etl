@@ -166,7 +166,12 @@ Diferencias medidas (2023–2026, media simple de estaciones por estado):
 Por eso el ETL usa la red reducida CSV como fuente operativa:
 
 - `actualizacion/load_estatal_csv.py` descarga los CSV, agrega por entidad y
-  carga `clima_estatal_mensual` con `fuente_id = SMN_RED_CSV`.
+  carga `clima_estatal_mensual` con `fuente_id = SMN_RED_CSV`. Con `--auto`
+  revisa a diario el mes anterior y se vuelve no-op cuando ya está cargado.
+- `actualizacion/sync_clima_hist.py` escribe el mes nuevo en `dbo.clima_hist`
+  de forma **incremental**: solo agrega meses posteriores al último que ya
+  existe, o completa el último si está incompleto. No reescribe 2023+ en cada
+  corrida.
 - `vw_clima_estatal_vigente` prioriza el CSV y usa `PDF_ESTATAL` solo si falta
   el mes.
 - `actualizacion/load_estatal_pdf.py` queda como **legacy/opcional** para

@@ -1,25 +1,27 @@
-"""DAG mensual: serie estatal desde la red reducida del SMN (CSV).
+"""DAG diario: serie estatal desde la red reducida del SMN (CSV).
 
-Ejecuta `python -m actualizacion.load_estatal_csv` dentro de la imagen
-`public-data-etl:latest`. Es la fuente operativa de la serie estatal:
+Ejecuta `python -m actualizacion.load_estatal_csv --auto` dentro de la imagen
+`public-data-etl:latest`.
 
-1. Descarga los CSV mensuales de TMax, TMed, TMin y Lluv.
-2. Agrega por entidad federativa (media simple de estaciones).
-3. Hace *upsert* en `datos_publicos.clima_estatal_mensual` con
-   `fuente_id = SMN_RED_CSV`.
-4. No escribe archivos: todo se parsea en memoria.
+Comportamiento:
 
-Por defecto procesa los últimos 3 meses. Para una carga histórica completa:
+1. Calcula el mes anterior (el último mes cerrado).
+2. Si ese mes ya está completo en `clima_estatal_mensual`, no descarga nada y
+   solo sincroniza `dbo.clima_hist` si falta el mes.
+3. Si falta, intenta descargar los CSV de TMax, TMed, TMin y Lluv.
+   - Si aún no están publicados (404), termina en success y reintenta al día
+     siguiente.
+   - Si están, los agrega por entidad y los carga.
+4. `dbo.clima_hist` se actualiza de forma **incremental**: solo agrega meses
+   posteriores al último que ya tiene, o completa el último si está
+   incompleto. No reescribe 2023+ en cada corrida.
+
+Por eso el DAG corre a diario, pero después de cargar el mes nuevo se vuelve
+un no-op (una consulta y salir) hasta el siguiente mes.
+
+Carga histórica manual:
 
     sudo make estatal-csv ARGS="--todo"
-
-La vista `vw_clima_estatal_vigente` prioriza el CSV y usa `PDF_ESTATAL` solo
-si falta el mes. El loader de PDFs (`datos_publicos_estatal_pdf`) queda como
-legacy/opcional y está pausado.
-
-Diferencias documentadas en `docs/fuentes.md`:
-    - temperatura: prácticamente idéntica al PDF (±0.3 °C);
-    - lluvia: estimación de la red reducida, difiere ~5–25% del PDF oficial.
 
 Requisitos:
     - Este DAG debe estar despausado.
@@ -44,26 +46,26 @@ DAG_ID = "datos_publicos_estatal_csv"
 with DAG(
     dag_id=DAG_ID,
     description=(
-        "Carga la serie estatal mensual desde la red reducida del SMN "
-        "(TMax, TMed, TMin, Lluv) en CSV"
+        "Carga el mes anterior desde la red reducida del SMN cuando aparece; "
+        "es idempotente y actualiza clima_hist de forma incremental"
     ),
-    schedule="0 8 6 * *",  # día 6 a las 08:00, hora de México
+    schedule="0 8 * * *",  # diario a las 08:00, hora de México
     start_date=FECHA_INICIO,
     catchup=False,
     max_active_runs=1,
-    dagrun_timeout=timedelta(hours=2),
+    dagrun_timeout=timedelta(hours=1),
     default_args={
         "owner": "etl",
         "retries": 2,
         "retry_delay": timedelta(minutes=10),
     },
-    tags=["etl", "datos-publicos", "mensual", "estatal", "csv"],
+    tags=["etl", "datos-publicos", "diario", "estatal", "csv"],
     doc_md=__doc__,
 ) as dag:
     tarea_etl(
         "actualizar_estatal_csv",
-        [],
+        ["--auto"],
         modulo="actualizacion.load_estatal_csv",
         mem_limit="1g",
-        timeout=timedelta(hours=1),
+        timeout=timedelta(minutes=30),
     )

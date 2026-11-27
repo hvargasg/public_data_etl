@@ -37,6 +37,7 @@ actualizacion/
 ├── load_claves_geo.py
 ├── load_estatal_csv.py
 ├── load_estatal_pdf.py
+├── sync_clima_hist.py
 ├── build_clima_clientes.py
 ├── build_mensual.py
 ├── sql/
@@ -223,7 +224,7 @@ Decisiones y mediciones completas en `../docs/clima_clientes.md`.
 ## 6. Serie estatal mensual (CSV de la red reducida)
 
 ```bash
-python -m actualizacion.load_estatal_csv
+python -m actualizacion.load_estatal_csv --auto
 ```
 
 Es la fuente **operativa** de la serie estatal. Descarga los CSV mensuales de
@@ -232,8 +233,22 @@ federativa (media simple de estaciones) y reemplaza en
 `clima_estatal_mensual` los pares `(año, mes, variable)` descargados
 (`fuente_id = SMN_RED_CSV`).
 
+Modo `--auto` (DAG diario):
+
+- Calcula el **mes anterior** y revisa si ya está completo en la base.
+- Si ya está, no descarga y solo sincroniza `clima_hist` si falta el mes.
+- Si falta, intenta bajar los CSV; si aún no existen (404), termina en success
+  y reintenta al día siguiente.
+- Cuando los carga, se vuelve no-op hasta el mes siguiente.
+
+`dbo.clima_hist` se actualiza de forma **incremental**:
+
+- Solo agrega meses posteriores al último que ya existe.
+- Si el último mes está incompleto, lo completa.
+- No reescribe 2023+ en cada corrida. 1985–2022 no se toca.
+
 - **No escribe archivos**: descarga y agrega en memoria.
-- Por defecto procesa los **últimos 3 meses**.
+- Por defecto (sin `--auto`) procesa los **últimos 3 meses**.
 - Si un CSV falla o no existe (404), conserva lo anterior de ese mes-variable.
 - Solo carga 2023+ (ventana del modelo).
 - `vw_clima_estatal_vigente` prioriza `SMN_RED_CSV` y usa `PDF_ESTATAL` solo
@@ -245,7 +260,15 @@ Opciones:
 python -m actualizacion.load_estatal_csv --todo
 python -m actualizacion.load_estatal_csv --desde 2025-01 --hasta 2025-12
 python -m actualizacion.load_estatal_csv --variables TMax,Lluv
+python -m actualizacion.load_estatal_csv --sin-clima-hist
 python -m actualizacion.load_estatal_csv --dry-run
+```
+
+Sincronización manual de `clima_hist`:
+
+```bash
+python -m actualizacion.sync_clima_hist --todo
+python -m actualizacion.sync_clima_hist --recalcular --desde 2023-01 --hasta 2026-10
 ```
 
 **Diferencia con los PDFs:** la temperatura es casi idéntica (±0.3 °C); la
@@ -255,10 +278,10 @@ Enlaces y ejemplos en `../docs/fuentes.md`.
 El loader de PDFs (`load_estatal_pdf.py`, `make estatal-pdf`, DAG
 `datos_publicos_estatal_pdf`) queda como **legacy/opcional**: su DAG vive en
 `../legacy_dags/` y **no se monta en Airflow**. Solo sirve para la tabla
-estatal oficial exacta.
+estatal oficial exacta; también sincroniza `clima_hist` de forma incremental.
 
 En el servidor: `make estatal-csv` y el DAG `datos_publicos_estatal_csv`
-(día 6 a las 08:00).
+(**diario** a las 08:00).
 
 ---
 
