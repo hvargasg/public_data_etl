@@ -39,7 +39,7 @@ from airflow.sdk import DAG
 
 # legacy_dags/ no se monta en Airflow; etl_common vive en ../dags.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "dags"))
-from etl_common import FECHA_INICIO, tarea_etl  # noqa: E402
+from etl_common import FECHA_INICIO, tags_datos_publicos, tarea_etl  # noqa: E402
 
 DAG_ID = "datos_publicos_estatal_pdf"
 
@@ -59,7 +59,7 @@ with DAG(
         "retries": 2,
         "retry_delay": timedelta(minutes=10),
     },
-    tags=["etl", "datos-publicos", "mensual", "estatal", "pdf"],
+    tags=tags_datos_publicos("clima", "estatal", "pdf", "legacy"),
     doc_md=__doc__,
 ) as dag:
     tarea_etl(

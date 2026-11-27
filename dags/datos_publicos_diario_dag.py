@@ -27,7 +27,7 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.sdk import Asset, DAG
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # para importar etl_common
-from etl_common import FECHA_INICIO, tarea_etl  # noqa: E402
+from etl_common import FECHA_INICIO, tags_datos_publicos, tarea_etl  # noqa: E402
 
 DAG_ID = "datos_publicos_diario"
 
@@ -50,7 +50,7 @@ with DAG(
         "retries": 2,
         "retry_delay": timedelta(minutes=10),
     },
-    tags=["etl", "datos-publicos", "diario"],
+    tags=tags_datos_publicos("clima", "diario"),
     doc_md=__doc__,
 ) as dag:
     # data_interval_end = fecha de la corrida; se procesan los 7 días previos.

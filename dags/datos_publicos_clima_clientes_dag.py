@@ -34,7 +34,7 @@ from pathlib import Path
 from airflow.sdk import DAG
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # para importar etl_common
-from etl_common import FECHA_INICIO, tarea_etl  # noqa: E402
+from etl_common import FECHA_INICIO, tags_datos_publicos, tarea_etl  # noqa: E402
 
 DAG_ID = "datos_publicos_clima_clientes"
 
@@ -54,7 +54,7 @@ with DAG(
         "retries": 2,
         "retry_delay": timedelta(minutes=10),
     },
-    tags=["etl", "datos-publicos", "diario", "geografia", "clientes"],
+    tags=tags_datos_publicos("clientes", "geografia", "diario"),
     doc_md=__doc__,
 ) as dag:
     tarea_etl(

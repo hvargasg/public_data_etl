@@ -21,7 +21,7 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.sdk import Asset, DAG, Param
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # para importar etl_common
-from etl_common import FECHA_INICIO, tarea_etl  # noqa: E402
+from etl_common import FECHA_INICIO, tags_datos_publicos, tarea_etl  # noqa: E402
 
 DAG_ID = "datos_publicos_historico_manual"
 
@@ -52,7 +52,7 @@ with DAG(
             description="Fecha inicial YYYY-MM-DD (mínimo 2023-01-01).",
         ),
     },
-    tags=["etl", "datos-publicos", "historico"],
+    tags=tags_datos_publicos("clima", "historico", "manual"),
     doc_md=__doc__,
 ) as dag:
     backfill = tarea_etl(

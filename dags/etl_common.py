@@ -46,6 +46,14 @@ RED_DOCKER = os.getenv("ETL_DOCKER_NETWORK", "") or None
 
 FECHA_INICIO = pendulum.datetime(2026, 1, 1, tz=ZONA_HORARIA)
 
+# Tags comunes para agrupar/filtrar en la UI. Cada DAG agrega los de dominio.
+TAGS_BASE = ("etl", "datos-publicos")
+
+
+def tags_datos_publicos(*extra: str) -> list[str]:
+    """Tags comunes + dominio/frecuencia, para organizar los DAGs en la UI."""
+    return [*TAGS_BASE, *extra]
+
 # Variables que el contenedor necesita para conectarse a SQL Server.
 VARIABLES_REQUERIDAS = (
     "DB_SERVER",

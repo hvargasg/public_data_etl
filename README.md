@@ -825,6 +825,22 @@ la carga tuvo éxito. Otros DAGs o consumidores pueden usar esos Assets en su
 idempotente e independiente que solo depende de que existan las tablas de
 negocio y la geografía INEGI cargada.
 
+**Tags para organizar la UI.** Todos los DAGs comparten `etl` y
+`datos-publicos`; cada uno agrega tags de dominio y frecuencia con el helper
+`tags_datos_publicos()` de `dags/etl_common.py`. En la UI usa el filtro de
+tags para ver solo un grupo:
+
+| Tag | DAGs |
+|---|---|
+| `clima` | `diario`, `mensual`, `historico_manual`, `estatal_csv` |
+| `geografia` | `claves_geo`, `clima_clientes` |
+| `clientes` | `clima_clientes` |
+| `estatal` | `estatal_csv` |
+| `diario` | `diario`, `claves_geo`, `clima_clientes`, `estatal_csv` |
+| `mensual` | `mensual` |
+| `historico` / `manual` | `historico_manual` |
+| `legacy` / `pdf` | DAG de PDFs en `legacy_dags/` (no montado) |
+
 Las tareas usan `DockerOperator`; cada corrida arranca un contenedor
 independiente de `public-data-etl:latest`, por lo que las dependencias del ETL
 no se mezclan con las de Airflow.
