@@ -113,12 +113,14 @@ def clean_series(raw: gpd.GeoDataFrame, *names: str) -> pd.Series | None:
     column = col(raw, *names)
     if column is None:
         return None
+    series = raw[column]
     return (
-        raw[column]
-        .astype(str)
+        series.astype(str)
         .str.strip()
         .str.replace(r"\.0$", "", regex=True)
         .replace({"nan": "", "None": ""})
+        .where(series.notna(), "")
+        .fillna("")
     )
 
 
@@ -138,7 +140,12 @@ def opt_series(raw: gpd.GeoDataFrame, *names: str) -> pd.Series | None:
 def clean_text(series: pd.Series | None) -> pd.Series | None:
     if series is None:
         return None
-    return series.astype(str).str.strip().replace({"nan": None, "None": None, "": None})
+    return (
+        series.astype(str)
+        .str.strip()
+        .replace({"nan": None, "None": None, "": None})
+        .where(series.notna(), None)
+    )
 
 
 def clean_upper(series: pd.Series | None) -> pd.Series | None:
@@ -149,6 +156,7 @@ def clean_upper(series: pd.Series | None) -> pd.Series | None:
         .str.strip()
         .str.upper()
         .replace({"NAN": None, "NONE": None, "": None})
+        .where(series.notna(), None)
     )
 
 
