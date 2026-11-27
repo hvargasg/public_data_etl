@@ -21,6 +21,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -121,7 +122,8 @@ def crear_pendientes(conn, t: Tabla, limite: int | None) -> int:
         f"{columnas}, "
         "lat FLOAT NOT NULL, lon FLOAT NOT NULL, "
         "cvegeo CHAR(5) NULL, cve_ent CHAR(2) NULL, "
-        "procesado BIT NOT NULL DEFAULT 0);"
+        "procesado BIT NOT NULL DEFAULT 0, "
+        "procesado_estado BIT NOT NULL DEFAULT 0);"
     )
     top = f"TOP ({limite}) " if limite else ""
     seleccion = ", ".join(f"[{c}]" for c in t.clave)
@@ -177,31 +179,45 @@ def procesar_lote(conn, t: Tabla, desde: int, hasta: int) -> int:
     return int(conn.exec_driver_sql(render_sql(sql)).scalar() or 0)
 
 
-def fallback_entidad(conn, t: Tabla) -> int:
-    """Para puntos válidos sin municipio, obtiene al menos el estado por polígono."""
-    seleccion = ", ".join(f"[{c}]" for c in t.clave)
-    particion = ", ".join(f"p.[{c}]" for c in t.clave)
-    join = " AND ".join(f"mt.[{c}] = c.[{c}]" for c in t.clave)
+def procesar_estado_lote(conn, t: Tabla, desde: int, hasta: int) -> int:
+    """Para los puntos del lote sin municipio, usa el polígono de entidad."""
     sql = f"""
     SET NOCOUNT ON;
 
-    ;WITH pend AS (
-        SELECT {seleccion}, [{t.lat}] AS lat, [{t.lon}] AS lon
-        FROM {t.tabla}
-        WHERE cve_ent IS NULL AND {t.filtro_coords}
+    ;WITH lote AS (
+        SELECT id, lat, lon
+        FROM #pend
+        WHERE id BETWEEN {desde} AND {hasta}
+          AND cvegeo IS NULL
+          AND procesado_estado = 0
     ),
     matches AS (
-        SELECT {", ".join(f"p.[{c}]" for c in t.clave)}, e.cve_ent,
-               ROW_NUMBER() OVER (PARTITION BY {particion} ORDER BY e.cve_ent) AS rn
-        FROM pend p
+        SELECT l.id, e.cve_ent,
+               ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY e.cve_ent) AS rn
+        FROM lote l
         JOIN {{{{schema}}}}.entidad e
-          ON e.geom.STIntersects(geography::Point(p.lat, p.lon, 4326)) = 1
+          ON e.geom.STIntersects(geography::Point(l.lat, l.lon, 4326)) = 1
     )
-    UPDATE c
-    SET cve_ent = mt.cve_ent
-    FROM {t.tabla} c
-    JOIN matches mt ON {join}
+    UPDATE p
+    SET cve_ent = mt.cve_ent,
+        procesado_estado = 1
+    FROM #pend p
+    JOIN matches mt ON mt.id = p.id
     WHERE mt.rn = 1;
+
+    UPDATE #pend
+    SET procesado_estado = 1
+    WHERE id BETWEEN {desde} AND {hasta}
+      AND cvegeo IS NULL
+      AND procesado_estado = 0;
+
+    UPDATE c
+    SET cve_ent = p.cve_ent
+    FROM {t.tabla} c
+    JOIN #pend p ON {t.join_dbo}
+    WHERE p.id BETWEEN {desde} AND {hasta}
+      AND p.cvegeo IS NULL
+      AND p.cve_ent IS NOT NULL;
 
     SELECT @@ROWCOUNT;
     """
@@ -253,9 +269,11 @@ def fallback_texto(conn, t: Tabla) -> tuple[int, int]:
 
 
 def procesar_tabla(conn, t: Tabla, batch: int, limite: int | None) -> dict:
+    inicio = time.monotonic()
     antes = resumen(conn, t)
     derivadas = derivar_estado(conn, t)
     pendientes = crear_pendientes(conn, t, limite)
+    fin_copia = time.monotonic()
 
     por_municipio = 0
     while True:
@@ -267,12 +285,27 @@ def procesar_tabla(conn, t: Tabla, batch: int, limite: int | None) -> dict:
         por_municipio += procesar_lote(
             conn, t, int(desde), int(desde) + batch - 1
         )
+    fin_municipio = time.monotonic()
+
+    # Solo se revisan los puntos de este lote que no cayeron en un municipio.
+    por_entidad = 0
+    while True:
+        desde = conn.exec_driver_sql(
+            "SELECT MIN(id) FROM #pend "
+            "WHERE cvegeo IS NULL AND procesado_estado = 0;"
+        ).scalar()
+        if desde is None:
+            break
+        por_entidad += procesar_estado_lote(
+            conn, t, int(desde), int(desde) + batch - 1
+        )
+    fin_entidad = time.monotonic()
 
     conn.exec_driver_sql("DROP TABLE #pend;")
 
-    por_entidad = fallback_entidad(conn, t)
     por_estado, por_ciudad = fallback_texto(conn, t)
     despues = resumen(conn, t)
+    fin_total = time.monotonic()
 
     return {
         "tabla": t.tabla,
@@ -285,12 +318,20 @@ def procesar_tabla(conn, t: Tabla, batch: int, limite: int | None) -> dict:
         "por_texto_estado": por_estado,
         "por_texto_ciudad": por_ciudad,
         "actualizadas": antes["pendientes"] - despues["pendientes"],
+        "duracion": {
+            "copia": fin_copia - inicio,
+            "municipio": fin_municipio - fin_copia,
+            "entidad": fin_entidad - fin_municipio,
+            "texto": fin_total - fin_entidad,
+            "total": fin_total - inicio,
+        },
     }
 
 
 def imprimir(resultado: dict) -> None:
     a = resultado["antes"]
     d = resultado["despues"]
+    t = resultado["duracion"]
     print(
         f"\n{resultado['tabla']}: {d['total']:,} filas\n"
         f"  con municipio : {a['con_municipio']:,} -> {d['con_municipio']:,}\n"
@@ -301,7 +342,12 @@ def imprimir(resultado: dict) -> None:
         f"entidad {resultado['por_entidad']:,}, "
         f"texto estado {resultado['por_texto_estado']:,}, "
         f"texto ciudad {resultado['por_texto_ciudad']:,}, "
-        f"derivadas {resultado['derivadas']:,})"
+        f"derivadas {resultado['derivadas']:,})\n"
+        f"  tiempo        : copia {t['copia']:.1f}s, "
+        f"municipio {t['municipio']:.1f}s, "
+        f"entidad {t['entidad']:.1f}s, "
+        f"texto {t['texto']:.1f}s, "
+        f"total {t['total']:.1f}s"
     )
 
 
