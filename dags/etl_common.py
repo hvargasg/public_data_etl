@@ -38,7 +38,7 @@ INFISICAL_DOMAIN = os.getenv(
     "INFISICAL_CONTAINER_API_URL", "http://infisical:8080"
 )
 INFISICAL_ENV = os.getenv("ETL_INFISICAL_ENV", "prod")
-INFISICAL_PATH = os.getenv("ETL_INFISICAL_PATH", "/public_data_etl")
+INFISICAL_PATH = os.getenv("ETL_INFISICAL_PATH", "/datos_publicos_etl")
 
 # Red Docker opcional. Este ETL solo necesita salida a Internet (SMN, SIH,
 # INEGI). Vacía = red por defecto de Docker.

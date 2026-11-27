@@ -14,7 +14,7 @@ Requisitos:
     - Este DAG debe estar despausado.
     - La imagen `public-data-etl:latest` debe existir en el host.
     - En producción, la identity de Infisical debe poder leer la carpeta
-      `/public_data_etl` del entorno `prod`.
+      `/datos_publicos_etl` del entorno `prod`.
 """
 
 from __future__ import annotations

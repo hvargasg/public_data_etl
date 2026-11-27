@@ -25,7 +25,7 @@
 #   SECRETS_SOURCE            env | infisical | auto (por defecto: auto)
 #   INFISICAL_MACHINE_FILE    credenciales de la identity (por defecto /etc/infisical/machine.env)
 #   INFISICAL_ENV             entorno de Infisical (por defecto: prod)
-#   INFISICAL_PATH            carpeta de secretos (por defecto: /public_data_etl)
+#   INFISICAL_PATH            carpeta de secretos (por defecto: /datos_publicos_etl)
 #   ETL_IMAGE                 imagen a ejecutar (por defecto public-data-etl:latest)
 #   ETL_DATA                  datos locales a montar en /app/data (por defecto ./data)
 #   ETL_UID                   usuario:grupo del contenedor (por defecto 1000:1000)
@@ -133,7 +133,7 @@ case "$SECRETS_SOURCE" in
         INFISICAL_ENV="${INFISICAL_ENV:-$(dotenv_get INFISICAL_ENV)}"
         INFISICAL_ENV="${INFISICAL_ENV:-prod}"
         INFISICAL_PATH="${INFISICAL_PATH:-$(dotenv_get INFISICAL_PATH)}"
-        INFISICAL_PATH="${INFISICAL_PATH:-/public_data_etl}"
+        INFISICAL_PATH="${INFISICAL_PATH:-/datos_publicos_etl}"
         # La CLI acepta la ruta con o sin barra final; normalizamos.
         [[ "$INFISICAL_PATH" == "/" ]] || INFISICAL_PATH="${INFISICAL_PATH%/}"
 

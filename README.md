@@ -478,7 +478,7 @@ imagen y resuelve los secretos de dos formas:
 | Modo | Cuándo | Origen de los secretos |
 | --- | --- | --- |
 | `env` | Desarrollo | `.env` del repositorio (montado en `/run/secrets/etl_env`) |
-| `infisical` | Servidor | carpeta `/public_data_etl` del entorno `prod` |
+| `infisical` | Servidor | carpeta `/datos_publicos_etl` del entorno `prod` |
 
 El modo se elige solo (`auto`): si existe `/etc/infisical/machine.env` usa
 Infisical; si no, `.env`. Se puede forzar con
@@ -505,7 +505,7 @@ En modo Infisical el wrapper:
 
 1. Lee `machine.env` (por defecto `/etc/infisical/machine.env`).
 2. Hace login con Universal Auth, sin imprimir credenciales.
-3. Exporta la carpeta `INFISICAL_PATH` (por defecto `/public_data_etl`).
+3. Exporta la carpeta `INFISICAL_PATH` (por defecto `/datos_publicos_etl`).
 4. Comprueba que estén `DB_SERVER`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`.
 5. Ejecuta el contenedor pasando los secretos con `--env-file` desde un archivo
    temporal con permisos `600`, que se borra al terminar.
@@ -539,7 +539,7 @@ Debe quedar como `root:root` y modo `640`, por eso los comandos del wrapper se
 ejecutan con `sudo`. Si tu CLI necesita el sufijo `/api`, usa
 `INFISICAL_API_URL=http://127.0.0.1:8081/api`.
 
-La identity necesita permiso de lectura sobre la carpeta `/public_data_etl` del
+La identity necesita permiso de lectura sobre la carpeta `/datos_publicos_etl` del
 entorno `prod`. Para validar login y secretos sin tocar la base de datos:
 
 ```bash
@@ -705,7 +705,7 @@ dependencias al contenedor del ETL.
 El DAG detecta ese modo y, **al ejecutar cada tarea** (no al parsear el DAG):
 
 1. Hace login con Universal Auth usando `machine.env`.
-2. Exporta los secretos de la carpeta `/public_data_etl` (entorno `prod`).
+2. Exporta los secretos de la carpeta `/datos_publicos_etl` (entorno `prod`).
 3. Se los pasa solo al contenedor del ETL como variables de entorno. No monta
    `.env` ni deja las credenciales en el entorno general de Airflow.
 
@@ -721,7 +721,7 @@ Infisical):
 |---|---|---|
 | `ETL_REPO_HOST` | `/opt/services/public_data_etl` | Ruta del repo en el host (datos y `.env`). |
 | `ETL_SECRETS_SOURCE` | `auto` | `auto`, `env` o `infisical`. |
-| `ETL_INFISICAL_PATH` | `/public_data_etl` | Carpeta de secretos del ETL. |
+| `ETL_INFISICAL_PATH` | `/datos_publicos_etl` | Carpeta de secretos del ETL. |
 | `ETL_INFISICAL_ENV` | `prod` | Entorno de Infisical. |
 | `INFISICAL_MACHINE_FILE` | `/run/secrets/infisical/machine.env` | Ruta del `machine.env` dentro del contenedor (la define el overlay de Airflow). |
 | `INFISICAL_CONTAINER_API_URL` | `http://infisical:8080` | URL de Infisical dentro de la red Docker. |
@@ -729,7 +729,7 @@ Infisical):
 
 ### 14.4 Puesta en marcha en el servidor
 
-1. Crea la carpeta `/public_data_etl` en el proyecto de Infisical, entorno
+1. Crea la carpeta `/datos_publicos_etl` en el proyecto de Infisical, entorno
    `prod`, y carga los secretos de la tabla de la sección 13.4.
 2. Verifica que la identity del servidor tenga acceso de lectura a esa carpeta.
 3. Despliega el código con `sudo make deploy` (hace pull y reconstruye la imagen
@@ -753,7 +753,7 @@ Infisical):
 > usa en la siguiente corrida sin reiniciar Airflow. El `.env` del servidor ya no
 > es necesario para los DAGs ni para las ejecuciones manuales: `make` y
 > `scripts/etl-infisical.sh` usan la misma Machine Identity y la carpeta
-> `/public_data_etl`. Conserva `.env` solo para el modo `env` local.
+> `/datos_publicos_etl`. Conserva `.env` solo para el modo `env` local.
 
 > Para operaciones que no están en un DAG (crear estructuras, recargar
 > geografía, cargar sitios o demografía) usa `make inicial`, `make etl` o los
