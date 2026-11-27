@@ -47,6 +47,7 @@ en las dimensiones.
 | `ageb` | AGEB | tipo, geometría, FK municipio/localidad |
 | `estacion` | estación | claves SMN/SIH, coordenadas, altitud, FK geografía |
 | `sitio` | sitio propio | código, coordenadas, altitud, FK geografía |
+| `cliente_ubicacion` | celda de ~1 km | coordenadas, geometría, FK geografía |
 
 La geografía es una **dimensión copo de nieve** (`entidad → municipio →
 localidad → AGEB`): así no se repiten nombres ni polígonos en estaciones,
@@ -57,6 +58,8 @@ sitios o hechos. Las claves son las oficiales del INEGI.
 | Tabla | Función |
 |---|---|
 | `sitio_estacion` | relación N:M sitio-estación, con ranking, distancia, diferencia de altitud y peso IDW |
+| `cliente_ubicacion_map` | enlace domicilio de cliente → celda de ~1 km |
+| `cliente_estacion` | relación N:M celda-estación, con ranking, distancia, diferencia de altitud y peso IDW |
 
 ### Hechos
 
@@ -66,6 +69,7 @@ sitios o hechos. Las claves son las oficiales del INEGI.
 | `clima_mensual` | estación-variable-año-mes-origen-fuente | valor, días con dato, días esperados, completo, fecha de corte |
 | `clima_estatal_mensual` | entidad-variable-año-mes-fuente | valor |
 | `clima_sitio_mensual` | sitio-variable-año-mes-método | valor, número de estaciones |
+| `clima_cliente_mensual` | celda-variable-año-mes-método | valor, número de estaciones |
 | `demografia_municipio` | municipio-año-indicador-fuente | valor |
 | `demografia_localidad` | localidad-año-indicador-fuente | valor |
 | `demografia_ageb` | AGEB-año-indicador-fuente | valor |
@@ -93,6 +97,12 @@ del ETL.
   se puede reconstruir desde `sitio_estacion` y la serie mensual de
   estaciones. Si se prefiere cero duplicación lógica, se puede reemplazar por
   una vista.
+- `clima_cliente_mensual` sigue la misma regla: es un hecho derivado persistido
+  por rendimiento, reconstruible desde `cliente_estacion` y
+  `vw_clima_mensual_vigente`. El clima **diario** por cliente no se persiste:
+  se expone con las vistas `vw_clima_cliente_diario` y
+  `vw_clima_cliente_diario_cercano`. El detalle está en
+  [`clima_clientes.md`](clima_clientes.md).
 - El **tiempo** se modela como dimensión degenerada (`fecha`, `anio`, `mes`).
   No se crea una tabla `tiempo` porque no hay atributos de calendario
   adicionales; si más adelante necesitas trimestres, semanas o feriados, se
@@ -122,9 +132,13 @@ entidad (cve_ent)
           │
           ├── clima_diario
           ├── clima_mensual
-          └── sitio_estacion ── sitio
-                                      │
-                                      └── clima_sitio_mensual
+          ├── sitio_estacion ── sitio
+          │                         │
+          │                         └── clima_sitio_mensual
+          └── cliente_estacion ── cliente_ubicacion
+                                    │
+                                    ├── cliente_ubicacion_map
+                                    └── clima_cliente_mensual
 ```
 
 ---

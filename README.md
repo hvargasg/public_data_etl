@@ -90,9 +90,11 @@ public_data_etl/
 │   ├── load_clima_smn.py
 │   ├── load_clima_sih.py
 │   ├── load_claves_geo.py
+│   ├── build_clima_clientes.py
 │   ├── build_mensual.py
 │   ├── sql/
-│   │   └── 10_claves_geo_dbo.sql
+│   │   ├── 10_claves_geo_dbo.sql
+│   │   └── 11_clima_clientes.sql
 │   └── queries/
 │       ├── README.md
 │       ├── 01_vigente.sql
@@ -106,6 +108,7 @@ public_data_etl/
 │   ├── datos_publicos_diario_dag.py
 │   ├── datos_publicos_mensual_dag.py
 │   ├── datos_publicos_claves_geo_dag.py
+│   ├── datos_publicos_clima_clientes_dag.py
 │   └── datos_publicos_historico_dag.py
 ├── scripts/
 │   ├── etl-infisical.sh
@@ -116,6 +119,7 @@ public_data_etl/
     ├── modelo.md
     ├── agregaciones.md
     ├── ageb.md
+    ├── clima_clientes.md
     └── operacion.md
 ```
 
@@ -385,6 +389,35 @@ Las columnas se crean de forma idempotente con
 En el servidor se ejecuta con `make claves-geo` (acepta `ARGS="..."`) y el DAG
 diario de las 02:00 (ver [sección 14](#14-orquestación-con-airflow)).
 
+### 6.5 Clima derivado de clientes
+
+Asigna clima mensual a cada ubicación de `dbo.Clientes` a partir de las
+estaciones OPERANDO más cercanas. **No** guarda clima diario por cliente: usa
+celdas de ~1 km, un puente con k=5 estaciones y un hecho mensual derivado
+(`NEAREST` e `IDW`).
+
+```bash
+python -m actualizacion.build_clima_clientes                 # últimos 2 meses
+python -m actualizacion.build_clima_clientes --todo           # 2023 a la fecha
+python -m actualizacion.build_clima_clientes --desde 2025-01 --hasta 2025-12
+python -m actualizacion.build_clima_clientes --recalcular-puente
+python -m actualizacion.build_clima_clientes --sin-mensual --limite 200
+```
+
+- `cliente_ubicacion`: celdas de ~1 km (`ROUND(Lat,2)`, `ROUND(Lon,2)`).
+- `cliente_ubicacion_map`: domicilio → celda.
+- `cliente_estacion`: k=5 estaciones vecinas con distancia, altitud y peso IDW.
+- `clima_cliente_mensual`: resultado mensual por celda, variable y método.
+
+El puente se refresca solo cada 30 días; `--recalcular-puente` lo fuerza. El
+clima mensual se lee de `vw_clima_mensual_vigente` (oficial gana). Para el
+detalle diario están las vistas `vw_clima_cliente_diario` y
+`vw_clima_cliente_diario_cercano`.
+
+Decisiones, mediciones y limitaciones completas en
+[`docs/clima_clientes.md`](docs/clima_clientes.md). En el servidor se ejecuta
+con `make clima-clientes` y el DAG diario de las 03:00.
+
 ---
 
 ## 7. Tablas principales
@@ -398,10 +431,14 @@ diario de las 02:00 (ver [sección 14](#14-orquestación-con-airflow)).
 | `estacion` | estación SMN/SIH | coordenadas, claves, URLs |
 | `sitio` | punto propio | coordenadas y geografía asignada |
 | `sitio_estacion` | sitio-estación | vecinos y peso IDW |
+| `cliente_ubicacion` | celda de ~1 km | ubicaciones únicas de clientes |
+| `cliente_ubicacion_map` | domicilio | enlace cliente-domicilio → celda |
+| `cliente_estacion` | celda-estación | k=5 vecinas y peso IDW |
 | `clima_diario` | estación-variable-fecha-fuente | observaciones diarias |
 | `clima_mensual` | estación-variable-mes-origen-fuente | calculado y oficial |
 | `clima_estatal_mensual` | entidad-variable-mes | serie de PDFs/migración |
 | `clima_sitio_mensual` | sitio-variable-mes-método | clima derivado |
+| `clima_cliente_mensual` | celda-variable-mes-método | clima derivado de clientes |
 | `demografia_municipio` | municipio-año-indicador | demografía/social |
 | `demografia_localidad` | localidad-año-indicador | demografía/social |
 | `demografia_ageb` | AGEB-año-indicador | demografía/social fina |
@@ -410,7 +447,9 @@ Todas las tablas viven en **`DataLake.datos_publicos`**.
 
 Las tablas de negocio `dbo.Clientes` y `dbo.CEDIS` se enriquecen con `cvegeo`
 (municipio) y `cve_ent` (estado) usando esta geografía; ver
-[sección 6.4](#64-claves-geográficas-de-negocio).
+[sección 6.4](#64-claves-geográficas-de-negocio). Las ubicaciones de
+`dbo.Clientes` también reciben clima mensual derivado; ver
+[sección 6.5](#65-clima-derivado-de-clientes).
 
 Detalle completo del modelo estrella (dimensiones, hechos, puente y por qué no
 hay redundancia) en [`docs/modelo.md`](docs/modelo.md).
@@ -458,6 +497,7 @@ Reglas completas en [`docs/agregaciones.md`](docs/agregaciones.md).
 | [`docs/modelo.md`](docs/modelo.md) | tablas, llaves, relaciones y vistas |
 | [`docs/agregaciones.md`](docs/agregaciones.md) | reglas diaria → mensual, prioridad y completitud |
 | [`docs/ageb.md`](docs/ageb.md) | cuándo usar AGEB y cómo cruzarla |
+| [`docs/clima_clientes.md`](docs/clima_clientes.md) | clima derivado de clientes: decisiones, tablas, cálculo y operación |
 | [`docs/operacion.md`](docs/operacion.md) | runbook, validaciones y solución de problemas |
 | [`carga_inicial/README.md`](carga_inicial/README.md) | detalle del bloque de carga inicial |
 | [`actualizacion/README.md`](actualizacion/README.md) | detalle del bloque recurrente y queries |
@@ -540,6 +580,7 @@ make mensual ARGS="--solo-calculo --desde 2026-11 --hasta 2026-11"
 make inicial ARGS="--init"
 make backfill ARGS="--tipo diario"
 make claves-geo ARGS="--tabla ambas"
+make clima-clientes ARGS="--todo"
 make query QUERY=04_calidad_datos.sql
 
 # Servidor: machine.env es root:640, por eso sudo
@@ -626,6 +667,7 @@ sudo make check-infisical
 | `make inicial ARGS="..."` | Ejecuta `carga_inicial.run_inicial`. |
 | `make backfill ARGS="..."` | Ejecuta `carga_inicial.backfill_clima`. |
 | `make claves-geo ARGS="..."` | Rellena `cvegeo`/`cve_ent` en `dbo.Clientes` y `dbo.CEDIS`. |
+| `make clima-clientes ARGS="..."` | Deriva clima mensual para las ubicaciones de clientes. |
 | `make query QUERY=...` | Ejecuta una query de `actualizacion/queries/`. |
 | `make etl MODULO=... ARGS="..."` | Ejecuta cualquier módulo del repo. |
 | `make etl-infisical ...` | Fuerza el modo Infisical. |
@@ -699,6 +741,7 @@ horario y sus tareas.
 | `datos_publicos_diario` | Automático | 06:00 | Carga los TXT diarios del SMN de los últimos 7 días y recalcula la serie mensual propia. |
 | `datos_publicos_mensual` | Automático | Día 3 a las 07:00 | Carga el TXT oficial del SMN y recalcula la serie propia del rango de años. |
 | `datos_publicos_claves_geo` | Automático | 02:00 | Rellena `cvegeo`/`cve_ent` en `dbo.Clientes` y `dbo.CEDIS` solo para filas nuevas. |
+| `datos_publicos_clima_clientes` | Automático | 03:00 | Deriva clima mensual (NEAREST/IDW) para las ubicaciones de `dbo.Clientes` (k=5, últimos 2 meses). |
 | `datos_publicos_historico_manual` | Manual | — | Carga histórica de clima 2023+ (`carga_inicial.backfill_clima`). |
 
 Los DAGs de clima terminan con una tarea `etl_completo` (`EmptyOperator`) que

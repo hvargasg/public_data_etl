@@ -27,7 +27,7 @@ PYTHON ?= $(if $(VENV_PYTHON),$(VENV_PYTHON),python3)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env check build diario mensual inicial backfill claves-geo query etl etl-infisical check-infisical shell clean deploy
+.PHONY: help env check build diario mensual inicial backfill claves-geo clima-clientes query etl etl-infisical check-infisical shell clean deploy
 
 help: ## Muestra esta ayuda
 	@awk 'BEGIN {FS = ":.*## "; printf "Uso: make <objetivo>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -44,7 +44,7 @@ check: ## Compila el código y revisa las CLI (usa la imagen si existe)
 	@set -e; \
 	MODULOS="carga_inicial.run_inicial carga_inicial.backfill_clima \
 		actualizacion.run_diario actualizacion.run_mensual actualizacion.run_query \
-		actualizacion.load_claves_geo"; \
+		actualizacion.load_claves_geo actualizacion.build_clima_clientes"; \
 	if $(DOCKER) image inspect $(IMAGE) >/dev/null 2>&1; then \
 		echo "check: usando la imagen $(IMAGE)"; \
 		$(DOCKER) run --rm --entrypoint bash $(IMAGE) -c \
@@ -75,6 +75,9 @@ backfill: ## Carga histórica de clima 2023+ (ARGS="--tipo diario")
 
 claves-geo: ## Asigna cvegeo/cve_ent en dbo.Clientes y dbo.CEDIS (ARGS="--tabla ambas")
 	@ETL_MODULO=actualizacion.load_claves_geo ./scripts/etl-infisical.sh $(ARGS)
+
+clima-clientes: ## Deriva clima mensual de clientes desde estaciones vecinas (ARGS="--todo")
+	@ETL_MODULO=actualizacion.build_clima_clientes ./scripts/etl-infisical.sh $(ARGS)
 
 query: ## Ejecuta una query de control (QUERY=04_calidad_datos.sql QUERY_ARGS="--limite 50")
 	@ETL_MODULO=actualizacion.run_query ./scripts/etl-infisical.sh \

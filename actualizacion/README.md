@@ -7,6 +7,7 @@ Este bloque contiene **todo lo recurrente**:
 - Construcción de la serie mensual propia (`CALCULADO`).
 - Clima mensual derivado para los sitios.
 - Claves geográficas (`cvegeo`, `cve_ent`) para las tablas de negocio `dbo`.
+- Clima mensual derivado para las ubicaciones de `dbo.Clientes`.
 - Queries de consulta y control.
 
 No crea estructuras ni carga geografía. Eso está en `carga_inicial/`.
@@ -33,9 +34,11 @@ actualizacion/
 ├── load_clima_smn.py
 ├── load_clima_sih.py
 ├── load_claves_geo.py
+├── build_clima_clientes.py
 ├── build_mensual.py
 ├── sql/
-│   └── 10_claves_geo_dbo.sql
+│   ├── 10_claves_geo_dbo.sql
+│   └── 11_clima_clientes.sql
 └── queries/
     ├── README.md
     ├── 01_vigente.sql
@@ -173,7 +176,47 @@ La DDL idempotente de las columnas está en
 
 ---
 
-## 5. Regla calculado vs oficial
+## 5. Clima derivado de clientes
+
+```bash
+python -m actualizacion.build_clima_clientes
+```
+
+Asigna clima mensual a cada ubicación de `dbo.Clientes` a partir de las
+estaciones OPERANDO más cercanas. No persiste el diario por cliente.
+
+Fases:
+
+1. **Celdas y mapa.** Redondea `Lat`/`Lon` a 2 decimales (~1 km) y crea
+   `cliente_ubicacion` y `cliente_ubicacion_map`.
+2. **Puente.** `cliente_estacion` con las **k=5** estaciones OPERANDO más
+   cercanas, distancia, diferencia de altitud y peso IDW (`1/d²`).
+3. **Mensual.** `clima_cliente_mensual` con `NEAREST` e `IDW`, leído de
+   `vw_clima_mensual_vigente`.
+
+Opciones:
+
+```bash
+python -m actualizacion.build_clima_clientes --todo            # 2023 a la fecha
+python -m actualizacion.build_clima_clientes --desde 2025-01 --hasta 2025-12
+python -m actualizacion.build_clima_clientes --recalcular-puente
+python -m actualizacion.build_clima_clientes --sin-mensual --limite 200
+python -m actualizacion.build_clima_clientes --solo-completos
+```
+
+- Por defecto recalcula los **últimos 2 meses** y refresca el puente si tiene
+  más de 30 días.
+- La DDL y las vistas están en `actualizacion/sql/11_clima_clientes.sql`.
+- Para el detalle diario: `vw_clima_cliente_diario` (IDW) y
+  `vw_clima_cliente_diario_cercano` (NEAREST).
+- En el servidor: `make clima-clientes` y el DAG
+  `datos_publicos_clima_clientes` (03:00).
+
+Decisiones y mediciones completas en `../docs/clima_clientes.md`.
+
+---
+
+## 6. Regla calculado vs oficial
 
 - `clima_mensual` guarda filas `CALCULADO / PRELIMINAR` y
   `OFICIAL / DEFINITIVO`.
@@ -186,7 +229,7 @@ Detalle en `../docs/agregaciones.md`.
 
 ---
 
-## 6. Queries de operación
+## 7. Queries de operación
 
 ```bash
 python -m actualizacion.run_query --archivo actualizacion/queries/01_vigente.sql
@@ -207,7 +250,7 @@ También puedes abrirlas en SSMS/Azure Data Studio y editar las variables
 
 ---
 
-## 7. SIH bloqueado
+## 8. SIH bloqueado
 
 Si el SIH devuelve HTML o redirecciones 307, descarga los CSV manualmente y
 carga desde una carpeta local:
@@ -221,7 +264,7 @@ parsearlas.
 
 ---
 
-## 8. Bitácora
+## 9. Bitácora
 
 Cada paso escribe en `datos_publicos.carga_log`.
 
