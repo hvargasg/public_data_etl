@@ -1,0 +1,16 @@
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+
+# Datos generados por el ETL
+data/*
+!data/.gitkeep
+logs/
+
+# Entornos virtuales y cachés de Python
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.pytest_cache/

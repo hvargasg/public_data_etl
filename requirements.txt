@@ -1,0 +1,16 @@
+# Requisitos del ETL homologado
+# Instala con: python -m pip install -r requirements.txt
+
+pandas>=2.0
+SQLAlchemy>=2.0
+pyodbc>=5.0
+requests>=2.31
+python-dotenv>=1.0
+
+# Geografía (solo para load_inegi)
+geopandas>=0.14
+shapely>=2.0
+pyproj>=3.6
+
+# Excel de sitios / demografía
+openpyxl>=3.1
